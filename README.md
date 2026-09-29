@@ -7,8 +7,8 @@ In **Settings → Topic tag**, enter a booru tag such as `league_of_legends` to 
 
 ## API proxy
 
-Danbooru, HypnoHub, and Rule34 requests use the Cloudflare Worker configured in the app. Safebooru requests remain direct. The Worker must be deployed with [`worker.js`](worker.js) at `photo-finder.jojochess101.workers.dev`; its CORS allowlist is restricted to `https://jonahbode.github.io`.
+Danbooru, HypnoHub, and Rule34 requests use the Cloudflare Worker configured in the app. Safebooru requests remain direct. The [`wrangler.toml`](wrangler.toml) config declares [`worker.js`](worker.js) as the Worker entrypoint and deploys it as `photo-finder` to `workers.dev`; its CORS allowlist is restricted to `https://jonahbode.github.io`.
 
-To change the Worker hostname, update the `WORKER` constant near the top of the inline script in `index.html`. The Worker accepts only post-search requests and forwards them to fixed upstream hosts.
+In Cloudflare, connect this repository as a **Worker**, not a Pages static site, and use `npx wrangler deploy` as the deploy command from the repository root. Wrangler will read `wrangler.toml` and deploy `worker.js` instead of attempting to detect static files. The Worker accepts only post-search requests and forwards them to fixed upstream hosts. To change the Worker hostname, update its name in `wrangler.toml` and the `WORKER` constant near the top of the inline script in `index.html`.
 
 Rule34 API credentials are optional. If you have a Rule34 API key, configure the Worker secrets `RULE34_USER_ID` and `RULE34_API_KEY` in Cloudflare; do not put the key in the page or a public repository. The proxy serves no ads or paywalls.
