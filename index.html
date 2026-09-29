@@ -43,7 +43,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <label>Maximum pictures to show<select id="display"><option value="25">25</option><option value="50">50</option><option value="75">75</option></select></label>
 <label>Minimum score<select id="minScore"><option value="0">Any</option><option value="5">5+</option><option value="10">10+</option><option value="20">20+</option><option value="50">50+</option></select></label>
 <label>Created on or after<input id="since" type="date"></label>
-<label>API address override (optional, e.g. your proxy)<input id="api" placeholder="https://..." autocapitalize="off"></label>
+<label>API address override (optional; Worker URL ending /hypnohub or /rule34)<input id="api" placeholder="https://your-worker.workers.dev/hypnohub" autocapitalize="off"></label>
 <div class="row"><button id="rs">Forget shown pictures</button></div></details>
 <div class="grid" id="g1"></div></main>
 <main id="v2" hidden><div class="row"><button id="ex">Copy liked as JSON</button></div>
@@ -98,7 +98,9 @@ async function search(seed,page,limit=100){
  const u=cfg.src=='hypnohub'
   ?`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`
   :`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
- const data=await jget(u),posts=Array.isArray(data)?data:Array.isArray(data.post)?data.post:data.post?[data.post]:[];
+ const data=await jget(u);
+ if(cfg.src=='rule34'&&data&&data.success===false)throw Error(data.message||'Rule34 search is unavailable.');
+ const posts=Array.isArray(data)?data:Array.isArray(data.post)?data.post:data.post?[data.post]:[];
  const site=POST_BASE[cfg.src];
  return posts.filter(p=>p&&p.id&&p.tags&&(+p.score||0)>=+cfg.minScore&&
    (!p.rating||String(p.rating).toLowerCase()==cfg.rating))
@@ -178,6 +180,7 @@ async function run(){
   cur=out;SV('cur',cur);SV('seen',[...seen].slice(-6000));SV('seenHashes',[...seenHashes].slice(-6000));showCur();
   say(`${out.length} new picks from ${pool.size} candidates. Heart the ones you like — they sharpen the next run.`);scrollTo(0,0)
  }catch(e){say(e.status?`The site answered with an error (${e.status})${e.detail?`: ${e.detail}`:''}. Try again in a minute.`:
+  e.name!='TypeError'&&e.message?e.message:
   'The browser could not reach the site (blocked by CORS, or offline). Try Safebooru under Settings, or set an API address override.')}
  finally{$('#go').disabled=false}}
 $('#go').onclick=run;
