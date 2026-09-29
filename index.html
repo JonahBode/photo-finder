@@ -31,7 +31,8 @@ details label{display:block;margin:8px 0}details input,details select{width:100%
 <button class="go" id="go">Find pictures</button><p id="st"></p>
 <details><summary>Search tags (tap to turn off)</summary><div class="chips" id="chips"></div></details>
 <details><summary>Settings</summary>
-<label>Source<select id="src"><option value="danbooru">Danbooru (rating:g only)</option><option value="safebooru">Safebooru</option></select></label>
+<label>Source<select id="src"><option value="danbooru">Danbooru</option><option value="safebooru">Safebooru</option></select></label>
+<label>Danbooru rating<select id="rating"><option value="g">General (g)</option><option value="q">Questionable (q)</option><option value="s">Sensitive (s)</option><option value="e">Explicit (e)</option></select></label>
 <label>Tags searched per run<select id="ns"><option>8</option><option>12</option><option>20</option></select></label>
 <label>API address override (optional, e.g. your proxy)<input id="api" placeholder="https://..." autocapitalize="off"></label>
 <div class="row"><button id="rs">Forget shown pictures</button></div></details>
@@ -48,26 +49,24 @@ artist_name signature watermark twitter_username character_name artist_logo look
 sitting holding animal_focus pokemon_focus outdoors day night dated hat shirt pants long_hair short_hair red_eyes blue_eyes yellow_eyes black_eyes
 black_hair colored_sclera teeth claws tail wings short_sleeves gen_1_pokemon food_name`.split(/\s+/));
 const QAPI=new URLSearchParams(location.search).get('api')||'';
-let cfg={src:'danbooru',api:'',ns:12,...LS('cfg')},liked=LS('liked')||[],
-seen=new Set(LS('seen')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[],fl={order:1,rating:1};
+let cfg={src:'danbooru',api:'',ns:12,rating:'g',...LS('cfg')},liked=LS('liked')||[],
+seen=new Set(LS('seen')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[];
 const sl=()=>new Promise(r=>setTimeout(r,900)),shuf=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
 const isL=id=>liked.some(l=>l.id==id),cnt=()=>$('#t2').textContent=`Liked (${liked.length})`;
 const say=t=>$('#st').textContent=t;
-async function jget(u){const r=await fetch(u);if(!r.ok){const e=new Error('HTTP '+r.status);e.status=r.status;throw e}
- const t=await r.text();return t.trim()?JSON.parse(t):[]}
+async function jget(u){const r=await fetch(u),t=await r.text();if(!r.ok){const e=new Error('HTTP '+r.status);e.status=r.status;
+ e.detail=t.replace(/\s+/g,' ').trim().slice(0,180);throw e}return t.trim()?JSON.parse(t):[]}
 async function search(seed,page){
  const b=QAPI||cfg.api||BASE[cfg.src],B=BASE[cfg.src];
  if(cfg.src=='safebooru'){
   const u=`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=100&pid=${page-1}&tags=${encodeURIComponent(seed?seed+' pokemon':'pokemon sort:random')}`;
   return (await jget(u)).map(p=>({id:'s'+p.id,tags:p.tags.trim().split(/\s+/),artist:[],score:+p.score||0,
    thumb:`${b}/thumbnails/${p.directory}/thumbnail_${p.image.replace(/\.[^.]+$/,'')}.jpg`,url:`${B}/index.php?page=post&s=view&id=${p.id}`}))}
- for(;;){
-  const t=(seed?seed+' pokemon':'pokemon')+(fl.rating?' rating:g':'')+(fl.order?(seed?' order:score':' order:random'):'');
-  try{return (await jget(`${b}/posts.json?limit=100&page=${page}&tags=${encodeURIComponent(t)}`))
-   .filter(p=>p.preview_file_url&&!p.is_banned&&(fl.rating||p.rating=='g'))
-   .map(p=>({id:'d'+p.id,tags:p.tag_string.split(' '),artist:(p.tag_string_artist||'').split(' ').filter(Boolean),score:p.score||0,
-    thumb:p.preview_file_url,url:B+'/posts/'+p.id}))}
-  catch(e){if((e.status==422||e.status==400)&&(fl.order||fl.rating)){fl.order?fl.order=0:fl.rating=0;continue}throw e}}}
+ const t=(seed?seed+' pokemon':'pokemon')+' rating:'+cfg.rating+(seed?' order:score':' order:date');
+ return (await jget(`${b}/posts.json?limit=100&page=${page}&tags=${encodeURIComponent(t)}`))
+  .filter(p=>p.preview_file_url&&!p.is_banned&&p.rating===cfg.rating)
+  .map(p=>({id:'d'+p.id,tags:p.tag_string.split(' '),artist:(p.tag_string_artist||'').split(' ').filter(Boolean),score:p.score||0,
+   thumb:p.preview_file_url,url:B+'/posts/'+p.id}))}
 const jac=(a,b)=>{let i=0;for(const x of a)if(b.has(x))i++;return i/(a.size+b.size-i||1)};
 function rank(pool,base){
  const cnt2={...P.tc};liked.forEach(l=>l.tags.split(' ').forEach(t=>cnt2[t]=(cnt2[t]||0)+1));
@@ -106,7 +105,7 @@ async function run(){
   if(!out.length){say('Nothing new found. Try more tags, or "Forget shown pictures".');return}
   cur.forEach(c=>seen.add(c.id));out.forEach(c=>seen.add(c.id));cur=out;SV('cur',cur);SV('seen',[...seen].slice(-6000));showCur();
   say(`${out.length} new picks from ${pool.size} candidates. Heart the ones you like — they sharpen the next run.`);scrollTo(0,0)
- }catch(e){say(e.status?`The site answered with an error (${e.status}). Try again in a minute.`:
+ }catch(e){say(e.status?`The site answered with an error (${e.status})${e.detail?`: ${e.detail}`:''}. Try again in a minute.`:
   'The browser could not reach the site (blocked by CORS, or offline). Try Safebooru under Settings, or set an API address override.')}
  finally{$('#go').disabled=false}}
 $('#go').onclick=run;
@@ -114,7 +113,7 @@ $('#go').onclick=run;
  $('#v1').hidden=v!='v1';$('#v2').hidden=v!='v2';if(v=='v2')showLiked()});
 P.seeds.forEach(s=>{const c=document.createElement('span');c.textContent=s;c.className=off.has(s)?'off':'';
  c.onclick=()=>{off.has(s)?off.delete(s):off.add(s);c.classList.toggle('off');SV('off',[...off])};$('#chips').appendChild(c)});
-[['src','src'],['ns','ns'],['api','api']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{cfg[k]=e.value.trim();SV('cfg',cfg)}});
+[['src','src'],['ns','ns'],['api','api'],['rating','rating']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{cfg[k]=e.value.trim();SV('cfg',cfg)}});
 $('#rs').onclick=()=>{seen=new Set();SV('seen',[]);say('Cleared — shown pictures may appear again.')};
 $('#ex').onclick=async()=>{const j=JSON.stringify({liked:liked.map(({id,tags})=>({id,tags}))});
  try{await navigator.clipboard.writeText(j);$('#ex').textContent='Copied!'}catch(e){prompt('Copy this:',j)}};
