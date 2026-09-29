@@ -37,6 +37,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <div class="row"><button id="addExclude" type="button">Add excluded tag</button></div><div class="chips" id="excludedChips"></div></details>
 <details><summary>Settings</summary>
 <label>Source<select id="src"><option value="danbooru">Danbooru</option><option value="safebooru">Safebooru</option><option value="hypnohub">HypnoHub (Gelbooru DAPI)</option><option value="rule34">Rule34.xxx (Gelbooru DAPI)</option></select></label>
+<label>Topic tag (optional; blank searches any topic)<input id="topic" placeholder="pokemon" autocapitalize="off"></label>
 <label>Rating<select id="rating"><option value="g">General (g)</option><option value="q">Questionable (q)</option><option value="s">Sensitive (s)</option><option value="e">Explicit (e)</option></select></label>
 <label>Built-in tags searched per run<select id="ns"><option>8</option><option>12</option><option>20</option></select></label>
 <label>Candidate pool<select id="pool"><option value="100">100</option><option value="200">200</option><option value="400">400</option></select></label>
@@ -64,13 +65,15 @@ artist_name signature watermark twitter_username character_name artist_logo look
 sitting holding animal_focus pokemon_focus outdoors day night dated hat shirt pants long_hair short_hair red_eyes blue_eyes yellow_eyes black_eyes
 black_hair colored_sclera teeth claws tail wings short_sleeves gen_1_pokemon food_name`.split(/\s+/));
 const QAPI=new URLSearchParams(location.search).get('api')||'';
-let cfg={src:'danbooru',api:'',ns:12,rating:'g',pool:200,display:50,minScore:0,since:'',...LS('cfg')},liked=LS('liked')||[],
+let cfg={src:'danbooru',api:'',topic:'pokemon',ns:12,rating:'g',pool:200,display:50,minScore:0,since:'',...LS('cfg')},liked=LS('liked')||[],
 customTags=LS('customTags')||[],excludedTags=LS('excludedTags')||[],dismissed=LS('dismissed')||[],
 seen=new Set(LS('seen')||[]),seenHashes=new Set(LS('seenHashes')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[];
 if(!Array.isArray(customTags))customTags=[];
 if(!Array.isArray(excludedTags))excludedTags=[];
 if(!Array.isArray(dismissed))dismissed=[];
 if(!['danbooru','safebooru','hypnohub','rule34'].includes(cfg.src))cfg.src='danbooru';
+cfg.topic=String(cfg.topic??'pokemon').trim().replace(/\s+/g,'_').toLowerCase();
+if(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg.topic)||cfg.topic.startsWith('-'))cfg.topic='pokemon';
 if(![100,200,400].includes(+cfg.pool))cfg.pool=200;
 if(![25,50,75].includes(+cfg.display))cfg.display=50;
 const ratingChoices=src=>['hypnohub','rule34'].includes(src)?[['safe','Safe'],['questionable','Questionable'],['explicit','Explicit']]:
@@ -85,12 +88,12 @@ const say=t=>$('#st').textContent=t;
 async function jget(u){const r=await fetch(u),t=await r.text();if(!r.ok){const e=new Error('HTTP '+r.status);e.status=r.status;
  e.detail=t.replace(/\s+/g,' ').trim().slice(0,180);throw e}return t.trim()?JSON.parse(t):[]}
 const hasRequiredTags=tags=>customTags.every(tag=>tags.includes(tag)),
-queryTags=(seed,base)=>[base,seed&&seed!='pokemon'?seed:'',...customTags].filter(Boolean).join(' ');
+queryTags=(seed,base)=>[...new Set([base,seed&&seed!=cfg.topic?seed:'',...customTags].filter(Boolean))].join(' ');
 async function search(seed,page,limit=100){
  const b=QAPI||cfg.api||BASE[cfg.src],B=BASE[cfg.src];
  const filters=[...excludedTags.map(t=>'-'+t),+cfg.minScore?`score:>=${cfg.minScore}`:'',cfg.since?`date:>=${cfg.since}`:''].filter(Boolean).join(' ');
  if(cfg.src=='safebooru'){
- const tags=[queryTags(seed,seed?'pokemon':'pokemon sort:random'),filters].filter(Boolean).join(' ');
+ const tags=[queryTags(seed,cfg.topic||(!seed?'sort:random':'')),filters].filter(Boolean).join(' ');
  const u=`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
  return (await jget(u)).map(p=>{const tags=p.tags.trim().split(/\s+/);return{...p,parsedTags:tags}})
   .filter(p=>hasRequiredTags(p.parsedTags)&&(+p.score||0)>=+cfg.minScore&&(!cfg.since||(p.created_at||'').slice(0,10)>=cfg.since))
@@ -99,9 +102,9 @@ async function search(seed,page,limit=100){
  if(cfg.src=='hypnohub'||cfg.src=='rule34'){
  let tags;
  if(cfg.src=='hypnohub'){
-  const searchTag=customTags.length?(seed||customTags[0]).split(/\s+/)[0]:seed&&seed!='pokemon'?seed:'pokemon';
+  const searchTag=cfg.topic||(seed||customTags[0]||'');
   tags=[searchTag,`rating:${cfg.rating}`].filter(Boolean).join(' ');
- }else tags=[queryTags(seed,'pokemon'),`rating:${cfg.rating}`,filters].filter(Boolean).join(' ');
+ }else tags=[queryTags(seed,cfg.topic),`rating:${cfg.rating}`,filters].filter(Boolean).join(' ');
  const u=cfg.src=='hypnohub'
   ?`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`
   :`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
@@ -117,7 +120,7 @@ async function search(seed,page,limit=100){
     thumb,url:`${site}/index.php?page=post&s=view&id=${encodeURIComponent(p.id)}`} })
   .filter(p=>p.thumb&&(!cfg.since||p.date.slice(0,10)>=cfg.since)&&
    (cfg.src!='hypnohub'||!excludedTags.some(tag=>p.tags.includes(tag)))) }
- const t=[queryTags(seed,'pokemon')+' rating:'+cfg.rating+(seed?' order:score':' order:date'),filters].filter(Boolean).join(' ');
+ const t=[queryTags(seed,cfg.topic)+' rating:'+cfg.rating+(seed?' order:score':' order:date'),filters].filter(Boolean).join(' ');
  return (await jget(`${b}/posts.json?limit=${limit}&page=${page}&tags=${encodeURIComponent(t)}`))
  .filter(p=>p.preview_file_url&&!p.is_banned&&p.rating===cfg.rating&&(+p.score||0)>=+cfg.minScore&&
   (!cfg.since||(p.created_at||'').slice(0,10)>=cfg.since)&&
@@ -174,14 +177,14 @@ async function run(){
    pool.set(c.id,c);if(c.hash)poolHashes.add(c.hash);if(isBase)base.set(c.id,c)}};
  const counts={};liked.forEach(l=>l.tags.split(/\s+/).forEach(t=>{if(t&&!STOP.has(t)&&!excludedTags.includes(t))counts[t]=(counts[t]||0)+1}));
  const likedSeeds=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([t])=>t);
- const seeds=cfg.src=='hypnohub'&&customTags.length
-  ?customTags.slice(1)
-  :cfg.src=='hypnohub'?[]:customTags.length?[...customTags]:[...new Set([...likedSeeds,...shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns)])];
+ const seeds=cfg.src=='hypnohub'
+  ?cfg.topic?[]:customTags.length?customTags.slice(1):likedSeeds
+  :customTags.length?[...customTags]:[...new Set([...likedSeeds,...(cfg.topic=='pokemon'?shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns):[])])];
  try{
   const conflicts=customTags.filter(tag=>excludedTags.includes(tag));
   if(conflicts.length){say(`Included tags are also excluded: ${conflicts.join(', ')}. Remove them from Excluded tags.`);return}
-  say(cfg.src=='hypnohub'?'Searching HypnoHub…':'Sampling Pokémon posts…');
-  add(await search(cfg.src=='hypnohub'&&customTags.length?customTags[0]:'',1,Math.min(50,+cfg.pool)),true);await sl();
+  say('Searching for pictures…');
+  add(await search('',1,Math.min(50,+cfg.pool)),true);await sl();
   for(const [i,s] of seeds.entries()){if(pool.size>=+cfg.pool)break;say(`Searching "${s}" (${i+1}/${seeds.length})…`);
    try{add(await search(s,1+Math.floor(Math.random()*3),Math.min(100,+cfg.pool-pool.size)))}catch(e){if(!e.status)throw e}await sl()}
   for(let p=2;pool.size<+cfg.pool&&p<=Math.ceil(+cfg.pool/50)+1;p++){
@@ -215,7 +218,7 @@ $('#addInclude').onclick=()=>addTag('includeInput',customTags,'customTags','cust
 $('#addExclude').onclick=()=>addTag('excludeInput',excludedTags,'excludedTags','excludedChips');
 [['includeInput','addInclude'],['excludeInput','addExclude']].forEach(([input,button])=>$('#'+input).onkeydown=e=>{if(e.key=='Enter'){e.preventDefault();$('#'+button).click()}});
 renderTags('customChips',customTags,'customTags');renderTags('excludedChips',excludedTags,'excludedTags');
-[['ns','ns'],['api','api'],['pool','pool'],['display','display'],['minScore','minScore'],['since','since']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{cfg[k]=e.value.trim();SV('cfg',cfg)}});
+[['ns','ns'],['api','api'],['topic','topic'],['pool','pool'],['display','display'],['minScore','minScore'],['since','since']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{cfg[k]=id=='topic'?e.value.trim().replace(/\s+/g,'_').toLowerCase():e.value.trim();if(id=='topic'&&(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg[k])||cfg[k].startsWith('-'))){cfg[k]='pokemon';e.value=cfg[k];say('Enter one valid topic tag, or leave it blank for any topic.')}SV('cfg',cfg)}});
 function renderRating(){const e=$('#rating');e.innerHTML='';ratingChoices(cfg.src).forEach(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;e.appendChild(o)});e.value=cfg.rating}
 $('#src').value=cfg.src;renderRating();
 $('#src').onchange=()=>{cfg.src=$('#src').value;cfg.rating=ratingChoices(cfg.src)[0][0];renderRating();SV('cfg',cfg)};
