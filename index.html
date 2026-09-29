@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="referrer" content="no-referrer"><meta name="theme-color" content="#111827">
+<meta name="referrer" content="strict-origin-when-cross-origin"><meta name="theme-color" content="#111827">
 <meta name="apple-mobile-web-app-capable" content="yes"><title>Pokémon Picks</title>
 <style>
 :root{--bg:#f4f5f7;--fg:#1f2933;--card:#fff;--mut:#6b7280;--ac:#0066cc;--hi:#e0245e}
@@ -87,7 +87,7 @@ function rank(pool,base){
  out.sort((a,b)=>b.match-a.match);
  return out.map(({id,tags,thumb,url,match,why})=>({id,tags,thumb,url,match,why}))}
 function card(c,i,box){const d=document.createElement('div');d.className='card'+(isL(c.id)?' on':'');
- d.innerHTML='<a target="_blank" rel="noreferrer"><img loading="lazy" alt="" referrerpolicy="no-referrer"></a><div class="m"><span></span><button aria-label="like">&#9829;</button></div><small></small>';
+ d.innerHTML='<a target="_blank" rel="noreferrer"><img loading="lazy" alt="" referrerpolicy="strict-origin-when-cross-origin"></a><div class="m"><span></span><button aria-label="like">&#9829;</button></div><small></small>';
  d.querySelector('a').href=c.url;d.querySelector('img').src=c.thumb;
  d.querySelector('span').textContent=c.match==null?'':`#${i+1} · ${c.match}%`;d.querySelector('small').textContent=(c.why||[]).join(', ');
  d.querySelector('button').onclick=()=>{const k=liked.findIndex(l=>l.id==c.id);
