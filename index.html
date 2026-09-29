@@ -84,17 +84,20 @@ cnt=()=>{$('#t2').textContent=`Liked (${liked.length})`;$('#t3').textContent=`Di
 const say=t=>$('#st').textContent=t;
 async function jget(u){const r=await fetch(u),t=await r.text();if(!r.ok){const e=new Error('HTTP '+r.status);e.status=r.status;
  e.detail=t.replace(/\s+/g,' ').trim().slice(0,180);throw e}return t.trim()?JSON.parse(t):[]}
+const hasRequiredTags=tags=>customTags.every(tag=>tags.includes(tag)),
+queryTags=(seed,base)=>[base,seed&&seed!='pokemon'?seed:'',...customTags].filter(Boolean).join(' ');
 async function search(seed,page,limit=100){
  const b=QAPI||cfg.api||BASE[cfg.src],B=BASE[cfg.src];
  const filters=[...excludedTags.map(t=>'-'+t),+cfg.minScore?`score:>=${cfg.minScore}`:'',cfg.since?`date:>=${cfg.since}`:''].filter(Boolean).join(' ');
  if(cfg.src=='safebooru'){
- const tags=[seed?seed+' pokemon':'pokemon sort:random',filters].filter(Boolean).join(' ');
+ const tags=[queryTags(seed,seed?'pokemon':'pokemon sort:random'),filters].filter(Boolean).join(' ');
  const u=`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
- return (await jget(u)).filter(p=>(+p.score||0)>=+cfg.minScore&&(!cfg.since||(p.created_at||'').slice(0,10)>=cfg.since))
-  .map(p=>({id:'s'+p.id,hash:p.md5||'',tags:p.tags.trim().split(/\s+/),artist:[],score:+p.score||0,date:p.created_at||'',
+ return (await jget(u)).map(p=>{const tags=p.tags.trim().split(/\s+/);return{...p,parsedTags:tags}})
+  .filter(p=>hasRequiredTags(p.parsedTags)&&(+p.score||0)>=+cfg.minScore&&(!cfg.since||(p.created_at||'').slice(0,10)>=cfg.since))
+  .map(p=>({id:'s'+p.id,hash:p.md5||'',tags:p.parsedTags,artist:[],score:+p.score||0,date:p.created_at||'',
    thumb:`${b}/thumbnails/${p.directory}/thumbnail_${p.image.replace(/\.[^.]+$/,'')}.jpg`,url:`${B}/index.php?page=post&s=view&id=${p.id}`}))}
  if(cfg.src=='hypnohub'||cfg.src=='rule34'){
- const tags=[seed?seed+' pokemon':'pokemon',cfg.rating,filters].filter(Boolean).join(' ');
+ const tags=[queryTags(seed,'pokemon'),cfg.rating,filters].filter(Boolean).join(' ');
  const u=cfg.src=='hypnohub'
   ?`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`
   :`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
@@ -103,17 +106,17 @@ async function search(seed,page,limit=100){
  const posts=Array.isArray(data)?data:Array.isArray(data.post)?data.post:data.post?[data.post]:[];
  const site=POST_BASE[cfg.src];
  return posts.filter(p=>p&&p.id&&p.tags&&(+p.score||0)>=+cfg.minScore&&
-   (!p.rating||String(p.rating).toLowerCase()==cfg.rating))
+   (!p.rating||String(p.rating).toLowerCase()==cfg.rating)&&hasRequiredTags(String(p.tags).split(/\s+/)))
   .map(p=>{const rawDate=p.created_at||'',date=/^\d{10}$/.test(String(rawDate))?new Date(+rawDate*1000).toISOString():String(rawDate);
    let thumb=p.preview_url||p.sample_url||p.file_url||'';if(thumb.startsWith('//'))thumb='https:'+thumb;
    return{id:(cfg.src=='rule34'?'r':'h')+p.id,hash:p.md5||'',tags:String(p.tags).split(/\s+/),artist:[],score:+p.score||0,date,
     thumb,url:`${site}/index.php?page=post&s=view&id=${encodeURIComponent(p.id)}`} })
   .filter(p=>p.thumb&&(!cfg.since||p.date.slice(0,10)>=cfg.since)) }
- const t=[(seed?seed+' pokemon':'pokemon')+' rating:'+cfg.rating+(seed?' order:score':' order:date'),filters].filter(Boolean).join(' ');
+ const t=[queryTags(seed,'pokemon')+' rating:'+cfg.rating+(seed?' order:score':' order:date'),filters].filter(Boolean).join(' ');
  return (await jget(`${b}/posts.json?limit=${limit}&page=${page}&tags=${encodeURIComponent(t)}`))
  .filter(p=>p.preview_file_url&&!p.is_banned&&p.rating===cfg.rating&&(+p.score||0)>=+cfg.minScore&&
   (!cfg.since||(p.created_at||'').slice(0,10)>=cfg.since)&&
-  !excludedTags.some(tag=>p.tag_string.split(' ').includes(tag)))
+  !excludedTags.some(tag=>p.tag_string.split(' ').includes(tag))&&hasRequiredTags(p.tag_string.split(' ')))
  .map(p=>({id:'d'+p.id,hash:p.md5||'',tags:p.tag_string.split(' '),artist:(p.tag_string_artist||'').split(' ').filter(Boolean),score:p.score||0,date:p.created_at||'',
   thumb:p.preview_file_url,url:B+'/posts/'+p.id}))}
 const jac=(a,b)=>{let i=0;for(const x of a)if(b.has(x))i++;return i/(a.size+b.size-i||1)};
@@ -124,7 +127,8 @@ function rank(pool,base){
  const w={};for(const t of new Set([...Object.keys(pc),...Object.keys(cnt2)])){const cl=cnt2[t]||0,
   v=Math.log(((cl+.5)/(nl+1))/(((pc[t]||0)+.5)/(ref.length+1)));w[t]=cl>=2?Math.max(-1.5,Math.min(2.5,v)):Math.min(v,0)*.5}
  const L=[...P.lk,...liked.map(l=>l.tags)].map(s=>new Set(s.split(' '))),rows=[];
- for(const c of pool.values()){if(seen.has(c.id)||(c.hash&&seenHashes.has(c.hash))||isL(c.id)||isD(c.id)||excludedTags.some(t=>c.tags.includes(t))||
+ for(const c of pool.values()){if(seen.has(c.id)||(c.hash&&seenHashes.has(c.hash))||isL(c.id)||isD(c.id)||
+  !hasRequiredTags(c.tags)||excludedTags.some(t=>c.tags.includes(t))||
   (+c.score||0)<+cfg.minScore||(cfg.since&&(c.date||'').slice(0,10)<cfg.since))continue;const ts=new Set(c.tags);if(L.some(l=>jac(ts,l)>=.85))continue;
   c.raw=[...ts].reduce((s,t)=>s+(w[t]||0),0)/Math.sqrt(ts.size)+.1*Math.log1p(Math.max(c.score,0));
   c.why=[...ts].filter(t=>!STOP.has(t)&&(w[t]||0)>.3).sort((a,b)=>w[b]-w[a]).slice(0,4);rows.push(c)}
@@ -165,8 +169,10 @@ async function run(){
    pool.set(c.id,c);if(c.hash)poolHashes.add(c.hash);if(isBase)base.set(c.id,c)}};
  const counts={};liked.forEach(l=>l.tags.split(/\s+/).forEach(t=>{if(t&&!STOP.has(t)&&!excludedTags.includes(t))counts[t]=(counts[t]||0)+1}));
  const likedSeeds=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([t])=>t);
- const seeds=[...new Set([...customTags,...likedSeeds,...shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns)])];
+ const seeds=customTags.length?[...customTags]:[...new Set([...likedSeeds,...shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns)])];
  try{
+  const conflicts=customTags.filter(tag=>excludedTags.includes(tag));
+  if(conflicts.length){say(`Included tags are also excluded: ${conflicts.join(', ')}. Remove them from Excluded tags.`);return}
   say('Sampling Pokémon posts…');add(await search('',1,Math.min(50,+cfg.pool)),true);await sl();
   for(const [i,s] of seeds.entries()){if(pool.size>=+cfg.pool)break;say(`Searching "${s}" (${i+1}/${seeds.length})…`);
    try{add(await search(s,1+Math.floor(Math.random()*3),Math.min(100,+cfg.pool-pool.size)))}catch(e){if(!e.status)throw e}await sl()}
