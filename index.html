@@ -61,7 +61,7 @@ black_hair colored_sclera teeth claws tail wings short_sleeves gen_1_pokemon foo
 const QAPI=new URLSearchParams(location.search).get('api')||'';
 let cfg={src:'danbooru',api:'',ns:12,rating:'g',pool:200,display:50,minScore:0,since:'',...LS('cfg')},liked=LS('liked')||[],
 customTags=LS('customTags')||[],excludedTags=LS('excludedTags')||[],dismissed=LS('dismissed')||[],
-seen=new Set(LS('seen')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[];
+seen=new Set(LS('seen')||[]),seenHashes=new Set(LS('seenHashes')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[];
 if(!Array.isArray(customTags))customTags=[];
 if(!Array.isArray(excludedTags))excludedTags=[];
 if(!Array.isArray(dismissed))dismissed=[];
@@ -83,14 +83,14 @@ async function search(seed,page,limit=100){
  const tags=[seed?seed+' pokemon':'pokemon sort:random',filters].filter(Boolean).join(' ');
  const u=`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
  return (await jget(u)).filter(p=>(+p.score||0)>=+cfg.minScore&&(!cfg.since||(p.created_at||'').slice(0,10)>=cfg.since))
-  .map(p=>({id:'s'+p.id,tags:p.tags.trim().split(/\s+/),artist:[],score:+p.score||0,date:p.created_at||'',
+  .map(p=>({id:'s'+p.id,hash:p.md5||'',tags:p.tags.trim().split(/\s+/),artist:[],score:+p.score||0,date:p.created_at||'',
    thumb:`${b}/thumbnails/${p.directory}/thumbnail_${p.image.replace(/\.[^.]+$/,'')}.jpg`,url:`${B}/index.php?page=post&s=view&id=${p.id}`}))}
  const t=[(seed?seed+' pokemon':'pokemon')+' rating:'+cfg.rating+(seed?' order:score':' order:date'),filters].filter(Boolean).join(' ');
  return (await jget(`${b}/posts.json?limit=${limit}&page=${page}&tags=${encodeURIComponent(t)}`))
  .filter(p=>p.preview_file_url&&!p.is_banned&&p.rating===cfg.rating&&(+p.score||0)>=+cfg.minScore&&
   (!cfg.since||(p.created_at||'').slice(0,10)>=cfg.since)&&
   !excludedTags.some(tag=>p.tag_string.split(' ').includes(tag)))
- .map(p=>({id:'d'+p.id,tags:p.tag_string.split(' '),artist:(p.tag_string_artist||'').split(' ').filter(Boolean),score:p.score||0,date:p.created_at||'',
+ .map(p=>({id:'d'+p.id,hash:p.md5||'',tags:p.tag_string.split(' '),artist:(p.tag_string_artist||'').split(' ').filter(Boolean),score:p.score||0,date:p.created_at||'',
   thumb:p.preview_file_url,url:B+'/posts/'+p.id}))}
 const jac=(a,b)=>{let i=0;for(const x of a)if(b.has(x))i++;return i/(a.size+b.size-i||1)};
 function rank(pool,base){
@@ -100,7 +100,7 @@ function rank(pool,base){
  const w={};for(const t of new Set([...Object.keys(pc),...Object.keys(cnt2)])){const cl=cnt2[t]||0,
   v=Math.log(((cl+.5)/(nl+1))/(((pc[t]||0)+.5)/(ref.length+1)));w[t]=cl>=2?Math.max(-1.5,Math.min(2.5,v)):Math.min(v,0)*.5}
  const L=[...P.lk,...liked.map(l=>l.tags)].map(s=>new Set(s.split(' '))),rows=[];
- for(const c of pool.values()){if(seen.has(c.id)||isL(c.id)||isD(c.id)||excludedTags.some(t=>c.tags.includes(t))||
+ for(const c of pool.values()){if(seen.has(c.id)||(c.hash&&seenHashes.has(c.hash))||isL(c.id)||isD(c.id)||excludedTags.some(t=>c.tags.includes(t))||
   (+c.score||0)<+cfg.minScore||(cfg.since&&(c.date||'').slice(0,10)<cfg.since))continue;const ts=new Set(c.tags);if(L.some(l=>jac(ts,l)>=.85))continue;
   c.raw=[...ts].reduce((s,t)=>s+(w[t]||0),0)/Math.sqrt(ts.size)+.1*Math.log1p(Math.max(c.score,0));
   c.why=[...ts].filter(t=>!STOP.has(t)&&(w[t]||0)>.3).sort((a,b)=>w[b]-w[a]).slice(0,4);rows.push(c)}
@@ -111,7 +111,7 @@ function rank(pool,base){
   const b=cand.splice(bi,1)[0],a=b.artist[0];if(a&&(art[a]||0)>=4)continue;if(a)art[a]=(art[a]||0)+1;out.push(b);
   cand.forEach(c=>c.ms=Math.max(c.ms,jac(c.cs,b.cs)))}
  out.sort((a,b)=>b.match-a.match);
- return out.map(({id,tags,thumb,url,match,why,score,date})=>({id,tags,thumb,url,match,why,score,date}))}
+ return out.map(({id,hash,tags,thumb,url,match,why,score,date})=>({id,hash,tags,thumb,url,match,why,score,date}))}
 function card(c,i,box){const d=document.createElement('div');d.className='card'+(isL(c.id)?' on':'');
 d.innerHTML='<a target="_blank" rel="noreferrer"><img loading="lazy" alt="" referrerpolicy="strict-origin-when-cross-origin"></a><div class="m"><span></span><div><button class="like" aria-label="like">&#9829;</button><button class="dismiss" aria-label="dismiss">×</button></div></div><small></small>';
  d.querySelector('a').href=c.url;d.querySelector('img').src=c.thumb;
@@ -119,10 +119,12 @@ d.innerHTML='<a target="_blank" rel="noreferrer"><img loading="lazy" alt="" refe
 const like=d.querySelector('.like'),dismissButton=d.querySelector('.dismiss');
 like.hidden=box=='g3';
 if(box=='g3'){dismissButton.textContent='↩';dismissButton.setAttribute('aria-label','restore');dismissButton.title='Restore to future results';
- dismissButton.onclick=()=>{dismissed=dismissed.filter(item=>item.id!=c.id);seen.delete(c.id);SV('dismissed',dismissed);SV('seen',[...seen].slice(-6000));cnt();showDismissed()}}
+ dismissButton.onclick=()=>{dismissed=dismissed.filter(item=>item.id!=c.id);seen.delete(c.id);if(c.hash)seenHashes.delete(c.hash);
+  SV('dismissed',dismissed);SV('seen',[...seen].slice(-6000));SV('seenHashes',[...seenHashes].slice(-6000));cnt();showDismissed()}}
 else if(box=='g2')dismissButton.hidden=true;
 else dismissButton.onclick=()=>{if(!isD(c.id)){dismissed.push(c);if(dismissed.length>6000)dismissed=dismissed.slice(-6000);
-  seen.add(c.id);SV('dismissed',dismissed);SV('seen',[...seen].slice(-6000));cur=cur.filter(item=>item.id!=c.id);SV('cur',cur);cnt();showCur();say('Dismissed — this post will not appear in future results.')}}
+  seen.add(c.id);if(c.hash)seenHashes.add(c.hash);SV('dismissed',dismissed);SV('seen',[...seen].slice(-6000));
+  SV('seenHashes',[...seenHashes].slice(-6000));cur=cur.filter(item=>item.id!=c.id);SV('cur',cur);cnt();showCur();say('Dismissed — this post will not appear in future results.')}}
 like.onclick=()=>{const k=liked.findIndex(l=>l.id==c.id);
   if(k>=0)liked.splice(k,1);else liked.push({id:c.id,tags:c.tags.join(' '),thumb:c.thumb,url:c.url});
   SV('liked',liked);cnt();if(box=='g2')showLiked();else d.classList.toggle('on',k<0)};
@@ -131,9 +133,10 @@ const showCur=()=>{$('#g1').innerHTML='';cur.forEach((c,i)=>card(c,i,'g1'))},
 showLiked=()=>{$('#g2').innerHTML='';liked.slice().reverse().forEach((c,i)=>card(c,i,'g2'))},
 showDismissed=()=>{$('#g3').innerHTML='';dismissed.slice().reverse().forEach((c,i)=>card(c,i,'g3'))};
 async function run(){
- $('#go').disabled=true;const pool=new Map(),base=new Map(),add=(items,isBase=false)=>{
-  for(const c of items){if(pool.size>=+cfg.pool)break;if(pool.has(c.id)||seen.has(c.id)||isL(c.id)||isD(c.id)||excludedTags.some(t=>c.tags.includes(t)))continue;
-   pool.set(c.id,c);if(isBase)base.set(c.id,c)}};
+ $('#go').disabled=true;const pool=new Map(),base=new Map(),poolHashes=new Set(),add=(items,isBase=false)=>{
+  for(const c of items){if(pool.size>=+cfg.pool)break;if(pool.has(c.id)||seen.has(c.id)||(c.hash&&(seenHashes.has(c.hash)||poolHashes.has(c.hash)))||
+   isL(c.id)||isD(c.id)||excludedTags.some(t=>c.tags.includes(t)))continue;
+   pool.set(c.id,c);if(c.hash)poolHashes.add(c.hash);if(isBase)base.set(c.id,c)}};
  const counts={};liked.forEach(l=>l.tags.split(/\s+/).forEach(t=>{if(t&&!STOP.has(t)&&!excludedTags.includes(t))counts[t]=(counts[t]||0)+1}));
  const likedSeeds=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([t])=>t);
  const seeds=[...new Set([...customTags,...likedSeeds,...shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns)])];
@@ -146,7 +149,9 @@ async function run(){
    add(await search('',p,Math.min(100,+cfg.pool-pool.size)),true);await sl()}
   say('Ranking…');const out=rank(pool,base);
   if(!out.length){say('Nothing new found. Try more tags, or "Forget shown pictures".');return}
-  cur.forEach(c=>seen.add(c.id));out.forEach(c=>seen.add(c.id));cur=out;SV('cur',cur);SV('seen',[...seen].slice(-6000));showCur();
+  cur.forEach(c=>{seen.add(c.id);if(c.hash)seenHashes.add(c.hash)});
+  out.forEach(c=>{seen.add(c.id);if(c.hash)seenHashes.add(c.hash)});
+  cur=out;SV('cur',cur);SV('seen',[...seen].slice(-6000));SV('seenHashes',[...seenHashes].slice(-6000));showCur();
   say(`${out.length} new picks from ${pool.size} candidates. Heart the ones you like — they sharpen the next run.`);scrollTo(0,0)
  }catch(e){say(e.status?`The site answered with an error (${e.status})${e.detail?`: ${e.detail}`:''}. Try again in a minute.`:
   'The browser could not reach the site (blocked by CORS, or offline). Try Safebooru under Settings, or set an API address override.')}
@@ -166,8 +171,9 @@ $('#addExclude').onclick=()=>addTag('excludeInput',excludedTags,'excludedTags','
 [['includeInput','addInclude'],['excludeInput','addExclude']].forEach(([input,button])=>$('#'+input).onkeydown=e=>{if(e.key=='Enter'){e.preventDefault();$('#'+button).click()}});
 renderTags('customChips',customTags,'customTags');renderTags('excludedChips',excludedTags,'excludedTags');
 [['src','src'],['ns','ns'],['api','api'],['rating','rating'],['pool','pool'],['display','display'],['minScore','minScore'],['since','since']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{cfg[k]=e.value.trim();SV('cfg',cfg)}});
-$('#clearDismissed').onclick=()=>{dismissed.forEach(c=>seen.delete(c.id));dismissed=[];SV('dismissed',[]);SV('seen',[...seen].slice(-6000));cnt();showDismissed()};
-$('#rs').onclick=()=>{seen=new Set();SV('seen',[]);say('Cleared — shown pictures may appear again.')};
+$('#clearDismissed').onclick=()=>{dismissed.forEach(c=>{seen.delete(c.id);if(c.hash)seenHashes.delete(c.hash)});
+ dismissed=[];SV('dismissed',[]);SV('seen',[...seen].slice(-6000));SV('seenHashes',[...seenHashes].slice(-6000));cnt();showDismissed()};
+$('#rs').onclick=()=>{seen=new Set();seenHashes=new Set();SV('seen',[]);SV('seenHashes',[]);say('Cleared — shown pictures may appear again.')};
 $('#ex').onclick=async()=>{const j=JSON.stringify({liked:liked.map(({id,tags})=>({id,tags}))});
  try{await navigator.clipboard.writeText(j);$('#ex').textContent='Copied!'}catch(e){prompt('Copy this:',j)}};
 cnt();showCur();if(!cur.length)say('Tap "Find pictures" — takes about 20 seconds.');
