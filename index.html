@@ -42,7 +42,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <label>Built-in tags searched per run<select id="ns"><option>8</option><option>12</option><option>20</option></select></label>
 <label>Candidate pool<select id="pool"><option value="100">100</option><option value="200">200</option><option value="400">400</option></select></label>
 <label>Maximum pictures to show<select id="display"><option value="25">25</option><option value="50">50</option><option value="75">75</option></select></label>
-<label>Minimum score<select id="minScore"><option value="0">Any</option><option value="5">5+</option><option value="10">10+</option><option value="20">20+</option><option value="50">50+</option></select></label>
+<label>Minimum score<select id="minScore"><option value="0">Any</option><option value="5">5+</option><option value="10">10+</option><option value="20">20+</option><option value="50">50+</option><option value="100">100+</option><option value="250">250+</option><option value="500">500+</option><option value="1000">1000+</option></select></label>
 <label>Created on or after<input id="since" type="date"></label>
 <div class="row"><button id="rs">Forget shown pictures</button></div></details>
 <div class="grid" id="g1"></div></main>
@@ -80,7 +80,7 @@ if(![25,50,75].includes(+cfg.display))cfg.display=50;
 const ratingChoices=src=>['hypnohub','rule34'].includes(src)?[['safe','Safe'],['questionable','Questionable'],['explicit','Explicit']]:
  src=='safebooru'?[['safe','Safe']]:[['g','General (g)'],['q','Questionable (q)'],['s','Sensitive (s)'],['e','Explicit (e)']];
 if(!ratingChoices(cfg.src).some(([value])=>value==cfg.rating))cfg.rating=ratingChoices(cfg.src)[0][0];
-if(![0,5,10,20,50].includes(+cfg.minScore))cfg.minScore=0;
+if(![0,5,10,20,50,100,250,500,1000].includes(+cfg.minScore))cfg.minScore=0;
 if(!/^\d{4}-\d{2}-\d{2}$/.test(cfg.since))cfg.since='';
 const sl=()=>new Promise(r=>setTimeout(r,900)),shuf=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
 const isL=id=>liked.some(l=>l.id==id),isD=id=>dismissed.some(d=>d.id==id),

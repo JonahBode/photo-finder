@@ -127,3 +127,31 @@ test("Rule34 short rating codes are matched to the selected rating", async () =>
   const posts = await context.searchPost("", 1, 10);
   assert.deepEqual(posts.map(post => post.id), ["r1"]);
 });
+
+test("Rule34 applies higher minimum scores in the query and result filter", async () => {
+  let requested;
+  const context = {
+    cfg: { src: "rule34", topic: "pokemon", rating: "safe", minScore: 250, since: "" },
+    customTags: [],
+    excludedTags: [],
+    API_BASE: { rule34: "https://photo-finder.jojochess101.workers.dev/rule34" },
+    BASE: { rule34: "https://api.rule34.xxx" },
+    POST_BASE: { rule34: "https://rule34.xxx" },
+    hasRequiredTags: () => true,
+    queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
+    jget: async url => {
+      requested = new URL(url);
+      return [
+        { id: 1, tags: "pokemon solo", rating: "s", score: 249, preview_url: "https://img.test/1.jpg" },
+        { id: 2, tags: "pokemon solo", rating: "s", score: 250, preview_url: "https://img.test/2.jpg" },
+      ];
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
+
+  const posts = await context.searchPost("", 1, 10);
+  assert.ok(requested.searchParams.get("tags").includes("score:>=250"));
+  assert.deepEqual(posts.map(post => post.id), ["r2"]);
+  assert.match(html, /<option value="1000">1000\+<\/option>/);
+});
