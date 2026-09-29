@@ -49,6 +49,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <main id="v2" hidden><div class="row"><button id="ex">Copy liked as JSON</button></div>
 <label>Import liked images (JSON)<input id="likedFile" type="file" accept="application/json,.json"></label>
 <label>Or paste liked-image JSON<textarea id="likedJson" rows="4" placeholder='{"liked":[{"id":"d123","tags":"pikachu solo"}]}'></textarea></label>
+<small>Import an array or an object with a "liked" array. Each entry needs tags; thumbnails and post URLs are optional.</small>
 <div class="row"><button id="importLiked">Import liked images</button></div><p id="importStatus"></p><div class="grid" id="g2"></div></main>
 <main id="v3" hidden><div class="row"><button id="clearDismissed">Clear dismissed list</button></div><div class="grid" id="g3"></div></main>
 <script>
@@ -148,8 +149,8 @@ else if(box=='g2')dismissButton.hidden=true;
 else dismissButton.onclick=()=>{if(!isD(c.id)){dismissed.push(c);if(dismissed.length>6000)dismissed=dismissed.slice(-6000);
   seen.add(c.id);if(c.hash)seenHashes.add(c.hash);SV('dismissed',dismissed);SV('seen',[...seen].slice(-6000));
   SV('seenHashes',[...seenHashes].slice(-6000));cur=cur.filter(item=>item.id!=c.id);SV('cur',cur);cnt();showCur();say('Dismissed — this post will not appear in future results.')}}
-like.onclick=()=>{const k=liked.findIndex(l=>l.id==c.id);
-  if(k>=0)liked.splice(k,1);else liked.push({id:c.id,tags:c.tags.join(' '),thumb:c.thumb,url:c.url});
+like.onclick=()=>{const k=liked.findIndex(l=>l.id==c.id),tags=Array.isArray(c.tags)?c.tags.join(' '):String(c.tags||'');
+  if(k>=0)liked.splice(k,1);else liked.push({id:c.id,tags,thumb:c.thumb,url:c.url});
   SV('liked',liked);cnt();if(box=='g2')showLiked();else d.classList.toggle('on',k<0);renderSeedTags()};
 $('#'+box).appendChild(d)}
 const showCur=()=>{$('#g1').innerHTML='';cur.forEach((c,i)=>card(c,i,'g1'))},
