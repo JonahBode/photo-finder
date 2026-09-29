@@ -1,5 +1,6 @@
 const ALLOWED_ORIGIN = "https://jonahbode.github.io";
 const UPSTREAMS = {
+  danbooru: "https://danbooru.donmai.us",
   hypnohub: "https://hypnohub.net",
   rule34: "https://api.rule34.xxx",
 };
@@ -26,39 +27,57 @@ export default {
     if (request.method === "OPTIONS") return response("", 204, origin);
     if (request.method !== "GET") return response('{"error":"Method not allowed"}', 405, origin);
 
-    const match = url.pathname.match(/^\/(hypnohub|rule34)\/index\.php$/);
-    if (!match) return response('{"error":"Route not found"}', 404, origin);
-
-    const source = match[1];
     const params = new URLSearchParams(url.search);
-    if (params.get("page") !== "dapi" || params.get("s") !== "post" || params.get("q") !== "index") {
-      return response('{"error":"Only DAPI post searches are allowed"}', 400, origin);
-    }
-    const limit = Number(params.get("limit") || 100);
-    const page = Number(params.get("pid") || 0);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 1000 ||
-        !Number.isInteger(page) || page < 0 || page > 100000) {
-      return response('{"error":"Invalid limit or page"}', 400, origin);
-    }
-    const tags = params.get("tags") || "";
-    if (tags.length > 2000 || /[\u0000-\u001f]/.test(tags)) {
-      return response('{"error":"Invalid tags"}', 400, origin);
-    }
-    if (source === "hypnohub" && tags.split(/\s+/).filter(Boolean).length > 2) {
-      return response('{"error":"HypnoHub allows at most two search clauses"}', 400, origin);
-    }
+    let upstream;
+    if (url.pathname === "/danbooru/posts.json") {
+      const limit = Number(params.get("limit") || 100);
+      const page = Number(params.get("page") || 1);
+      const tags = params.get("tags") || "";
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100 ||
+          !Number.isInteger(page) || page < 1 || page > 100000) {
+        return response('{"error":"Invalid limit or page"}', 400, origin);
+      }
+      if (tags.length > 2000 || /[\u0000-\u001f]/.test(tags)) {
+        return response('{"error":"Invalid tags"}', 400, origin);
+      }
+      upstream = new URL("/posts.json", UPSTREAMS.danbooru);
+      upstream.searchParams.set("limit", String(limit));
+      upstream.searchParams.set("page", String(page));
+      upstream.searchParams.set("tags", tags);
+    } else {
+      const match = url.pathname.match(/^\/(hypnohub|rule34)\/index\.php$/);
+      if (!match) return response('{"error":"Route not found"}', 404, origin);
 
-    const upstream = new URL("/index.php", UPSTREAMS[source]);
-    upstream.searchParams.set("page", "dapi");
-    upstream.searchParams.set("s", "post");
-    upstream.searchParams.set("q", "index");
-    upstream.searchParams.set("json", "1");
-    upstream.searchParams.set("limit", String(limit));
-    upstream.searchParams.set("pid", String(page));
-    upstream.searchParams.set("tags", tags);
-    if (source === "rule34" && env.RULE34_USER_ID && env.RULE34_API_KEY) {
-      upstream.searchParams.set("user_id", env.RULE34_USER_ID);
-      upstream.searchParams.set("api_key", env.RULE34_API_KEY);
+      const source = match[1];
+      if (params.get("page") !== "dapi" || params.get("s") !== "post" || params.get("q") !== "index") {
+        return response('{"error":"Only DAPI post searches are allowed"}', 400, origin);
+      }
+      const limit = Number(params.get("limit") || 100);
+      const page = Number(params.get("pid") || 0);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1000 ||
+          !Number.isInteger(page) || page < 0 || page > 100000) {
+        return response('{"error":"Invalid limit or page"}', 400, origin);
+      }
+      const tags = params.get("tags") || "";
+      if (tags.length > 2000 || /[\u0000-\u001f]/.test(tags)) {
+        return response('{"error":"Invalid tags"}', 400, origin);
+      }
+      if (source === "hypnohub" && tags.split(/\s+/).filter(Boolean).length > 2) {
+        return response('{"error":"HypnoHub allows at most two search clauses"}', 400, origin);
+      }
+
+      upstream = new URL("/index.php", UPSTREAMS[source]);
+      upstream.searchParams.set("page", "dapi");
+      upstream.searchParams.set("s", "post");
+      upstream.searchParams.set("q", "index");
+      upstream.searchParams.set("json", "1");
+      upstream.searchParams.set("limit", String(limit));
+      upstream.searchParams.set("pid", String(page));
+      upstream.searchParams.set("tags", tags);
+      if (source === "rule34" && env.RULE34_USER_ID && env.RULE34_API_KEY) {
+        upstream.searchParams.set("user_id", env.RULE34_USER_ID);
+        upstream.searchParams.set("api_key", env.RULE34_API_KEY);
+      }
     }
 
     try {

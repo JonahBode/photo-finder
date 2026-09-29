@@ -9,6 +9,43 @@ const { default: worker } = await import(
 const allowedOrigin = "https://jonahbode.github.io";
 const request = (path, options = {}) => new Request(`https://worker.test${path}`, options);
 
+test("proxies validated Danbooru API requests to its fixed origin", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstream;
+  globalThis.fetch = async url => {
+    upstream = new URL(url);
+    return new Response('[{"id":123}]', {
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  try {
+    const result = await worker.fetch(request(
+      "/danbooru/posts.json?limit=50&page=2&tags=league_of_legends+rating%3Ag",
+      { headers: { Origin: allowedOrigin } },
+    ), {});
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get("Access-Control-Allow-Origin"), allowedOrigin);
+    assert.equal(upstream.origin, "https://danbooru.donmai.us");
+    assert.equal(upstream.pathname, "/posts.json");
+    assert.equal(upstream.searchParams.get("limit"), "50");
+    assert.equal(upstream.searchParams.get("page"), "2");
+    assert.equal(upstream.searchParams.get("tags"), "league_of_legends rating:g");
+    assert.deepEqual(await result.json(), [{ id: 123 }]);
+
+    const invalidPage = await worker.fetch(request(
+      "/danbooru/posts.json?limit=101&page=0&tags=pokemon",
+      { headers: { Origin: allowedOrigin } },
+    ), {});
+    assert.equal(invalidPage.status, 400);
+    assert.equal((await worker.fetch(request(
+      "/danbooru/other.json",
+      { headers: { Origin: allowedOrigin } },
+    ), {})).status, 404);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("proxies a HypnoHub request, preserving CORS and enforcing its two-clause cap", async () => {
   const originalFetch = globalThis.fetch;
   let upstream;
