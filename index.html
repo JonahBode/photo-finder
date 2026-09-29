@@ -179,7 +179,7 @@ async function run(){
  const likedSeeds=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([t])=>t);
  const seeds=cfg.src=='hypnohub'
   ?cfg.topic?[]:customTags.length?customTags.slice(1):likedSeeds
-  :customTags.length?[...customTags]:[...new Set([...likedSeeds,...(cfg.topic=='pokemon'?shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns):[])])];
+  :customTags.length?[...customTags]:cfg.topic&&cfg.topic!='pokemon'?[]:[...new Set([...likedSeeds,...(cfg.topic=='pokemon'?shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns):[])])];
  try{
   const conflicts=customTags.filter(tag=>excludedTags.includes(tag));
   if(conflicts.length){say(`Included tags are also excluded: ${conflicts.join(', ')}. Remove them from Excluded tags.`);return}

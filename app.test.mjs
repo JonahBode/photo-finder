@@ -48,3 +48,43 @@ test("HypnoHub searches obey the two-clause limit and require every included tag
   assert.ok(results.every(post => included.every(tag => post.tags.includes(tag))));
   assert.ok(results.every(post => post.id == "h1"));
 });
+
+test("topic tags replace Pokémon across sources and blank topic searches broadly", async () => {
+  for (const source of ["danbooru", "safebooru", "hypnohub", "rule34"]) {
+    for (const topic of ["league_of_legends", ""]) {
+      const requested = [];
+      const context = {
+        cfg: { src: source, topic, rating: source === "danbooru" ? "g" : "safe", minScore: 0, since: "" },
+        customTags: [],
+        excludedTags: [],
+        QAPI: "",
+        BASE: {
+          danbooru: "https://danbooru.donmai.us",
+          safebooru: "https://safebooru.org",
+          hypnohub: "https://hypnohub.net",
+          rule34: "https://api.rule34.xxx",
+        },
+        POST_BASE: {
+          danbooru: "https://danbooru.donmai.us",
+          safebooru: "https://safebooru.org",
+          hypnohub: "https://hypnohub.net",
+          rule34: "https://rule34.xxx",
+        },
+        hasRequiredTags: () => true,
+        queryTags: (seed, base) => [...new Set([base, seed && seed !== topic ? seed : ""].filter(Boolean))].join(" "),
+        jget: async url => {
+          requested.push(new URL(url));
+          return [];
+        },
+      };
+      vm.createContext(context);
+      vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
+      await context.searchPost("", 1, 10);
+
+      assert.equal(requested.length, 1, `${source}, topic "${topic}"`);
+      const tags = requested[0].searchParams.get("tags").split(/\s+/).filter(Boolean);
+      assert.equal(tags.includes("league_of_legends"), Boolean(topic), `${source}, topic "${topic}"`);
+      assert.ok(!tags.includes("pokemon"), `${source}, topic "${topic}"`);
+    }
+  }
+});

@@ -1,6 +1,10 @@
 # photo-finder
 Find similar photos
 
+## Search topic
+
+In **Settings → Topic tag**, enter a booru tag such as `league_of_legends` to search a different series. The default is `pokemon`; leave the field blank to search without a required topic tag. Search tags and rating syntax vary by image source.
+
 ## Optional HypnoHub / Rule34 API proxy
 
 The static page makes API requests directly from the browser by default. If the browser blocks HypnoHub or Rule34 requests because of CORS, deploy [`worker.js`](worker.js) as a Cloudflare Worker:
