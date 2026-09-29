@@ -101,7 +101,7 @@ async function search(seed,page,limit=100){
   .map(p=>({id:'s'+p.id,hash:p.md5||'',tags:p.parsedTags,artist:[],score:+p.score||0,date:p.created_at||'',
    thumb:`${b}/thumbnails/${p.directory}/thumbnail_${p.image.replace(/\.[^.]+$/,'')}.jpg`,url:`${B}/index.php?page=post&s=view&id=${p.id}`}))}
  if(cfg.src=='hypnohub'||cfg.src=='rule34'){
- let tags;
+ let tags;const ratingNames={g:'safe',s:'safe',safe:'safe',q:'questionable',questionable:'questionable',e:'explicit',explicit:'explicit'};
  if(cfg.src=='hypnohub'){
   const searchTag=cfg.topic||(seed||customTags[0]||'');
   tags=[searchTag,`rating:${cfg.rating}`].filter(Boolean).join(' ');
@@ -114,7 +114,7 @@ async function search(seed,page,limit=100){
  const posts=Array.isArray(data)?data:Array.isArray(data.post)?data.post:data.post?[data.post]:[];
  const site=POST_BASE[cfg.src];
  return posts.filter(p=>p&&p.id&&p.tags&&(+p.score||0)>=+cfg.minScore&&
-   (!p.rating||String(p.rating).toLowerCase()==cfg.rating)&&hasRequiredTags(String(p.tags).split(/\s+/)))
+   (!p.rating||ratingNames[String(p.rating).toLowerCase()]==cfg.rating)&&hasRequiredTags(String(p.tags).split(/\s+/)))
   .map(p=>{const rawDate=p.created_at||'',date=/^\d{10}$/.test(String(rawDate))?new Date(+rawDate*1000).toISOString():String(rawDate);
    let thumb=p.preview_url||p.sample_url||p.file_url||'';if(thumb.startsWith('//'))thumb='https:'+thumb;
    return{id:(cfg.src=='rule34'?'r':'h')+p.id,hash:p.md5||'',tags:String(p.tags).split(/\s+/),artist:[],score:+p.score||0,date,
