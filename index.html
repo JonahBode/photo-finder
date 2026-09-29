@@ -99,10 +99,9 @@ async function search(seed,page,limit=100){
  if(cfg.src=='hypnohub'||cfg.src=='rule34'){
  let tags;
  if(cfg.src=='hypnohub'){
-  const searchTags=customTags.length?seed?seed.split(/\s+/).slice(0,2):customTags.slice(0,2):
-   seed&&seed!='pokemon'?[seed,'pokemon']:['pokemon'];
-  tags=[...searchTags,cfg.rating].filter(Boolean).join(' ');
- }else tags=[queryTags(seed,'pokemon'),cfg.rating,filters].filter(Boolean).join(' ');
+  const searchTag=customTags.length?(seed||customTags[0]).split(/\s+/)[0]:seed&&seed!='pokemon'?seed:'pokemon';
+  tags=[searchTag,`rating:${cfg.rating}`].filter(Boolean).join(' ');
+ }else tags=[queryTags(seed,'pokemon'),`rating:${cfg.rating}`,filters].filter(Boolean).join(' ');
  const u=cfg.src=='hypnohub'
   ?`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`
   :`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
@@ -175,15 +174,14 @@ async function run(){
    pool.set(c.id,c);if(c.hash)poolHashes.add(c.hash);if(isBase)base.set(c.id,c)}};
  const counts={};liked.forEach(l=>l.tags.split(/\s+/).forEach(t=>{if(t&&!STOP.has(t)&&!excludedTags.includes(t))counts[t]=(counts[t]||0)+1}));
  const likedSeeds=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([t])=>t);
- const hypnohubQueries=customTags.length>2?customTags.slice(0,-1).map((tag,i)=>`${tag} ${customTags[i+1]}`):[];
  const seeds=cfg.src=='hypnohub'&&customTags.length
-  ?hypnohubQueries.slice(1)
-  :customTags.length?[...customTags]:[...new Set([...likedSeeds,...shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns)])];
+  ?customTags.slice(1)
+  :cfg.src=='hypnohub'?[]:customTags.length?[...customTags]:[...new Set([...likedSeeds,...shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns)])];
  try{
   const conflicts=customTags.filter(tag=>excludedTags.includes(tag));
   if(conflicts.length){say(`Included tags are also excluded: ${conflicts.join(', ')}. Remove them from Excluded tags.`);return}
   say(cfg.src=='hypnohub'?'Searching HypnoHub…':'Sampling Pokémon posts…');
-  add(await search('',1,Math.min(50,+cfg.pool)),true);await sl();
+  add(await search(cfg.src=='hypnohub'&&customTags.length?customTags[0]:'',1,Math.min(50,+cfg.pool)),true);await sl();
   for(const [i,s] of seeds.entries()){if(pool.size>=+cfg.pool)break;say(`Searching "${s}" (${i+1}/${seeds.length})…`);
    try{add(await search(s,1+Math.floor(Math.random()*3),Math.min(100,+cfg.pool-pool.size)))}catch(e){if(!e.status)throw e}await sl()}
   for(let p=2;pool.size<+cfg.pool&&p<=Math.ceil(+cfg.pool/50)+1;p++){

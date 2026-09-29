@@ -44,6 +44,9 @@ export default {
     if (tags.length > 2000 || /[\u0000-\u001f]/.test(tags)) {
       return response('{"error":"Invalid tags"}', 400, origin);
     }
+    if (source === "hypnohub" && tags.split(/\s+/).filter(Boolean).length > 2) {
+      return response('{"error":"HypnoHub allows at most two search clauses"}', 400, origin);
+    }
 
     const upstream = new URL("/index.php", UPSTREAMS[source]);
     upstream.searchParams.set("page", "dapi");
