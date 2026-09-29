@@ -44,7 +44,6 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <label>Maximum pictures to show<select id="display"><option value="25">25</option><option value="50">50</option><option value="75">75</option></select></label>
 <label>Minimum score<select id="minScore"><option value="0">Any</option><option value="5">5+</option><option value="10">10+</option><option value="20">20+</option><option value="50">50+</option></select></label>
 <label>Created on or after<input id="since" type="date"></label>
-<label>API address override (optional; Worker URL ending /danbooru, /hypnohub, or /rule34)<input id="api" placeholder="https://your-worker.workers.dev/danbooru" autocapitalize="off"></label>
 <div class="row"><button id="rs">Forget shown pictures</button></div></details>
 <div class="grid" id="g1"></div></main>
 <main id="v2" hidden><div class="row"><button id="ex">Copy liked as JSON</button></div>
@@ -58,16 +57,18 @@ const P={"n":252,"tc":{"no_humans":177,"gem":4,"crystal":2,"black_background":4,
 const $=s=>document.querySelector(s),LS=k=>{try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},
 SV=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const BASE={danbooru:'https://danbooru.donmai.us',safebooru:'https://safebooru.org',hypnohub:'https://hypnohub.net',rule34:'https://api.rule34.xxx'};
+const WORKER='https://photo-finder.jojochess101.workers.dev';
+const API_BASE={danbooru:`${WORKER}/danbooru`,safebooru:BASE.safebooru,hypnohub:`${WORKER}/hypnohub`,rule34:`${WORKER}/rule34`};
 const POST_BASE={danbooru:BASE.danbooru,safebooru:BASE.safebooru,hypnohub:BASE.hypnohub,rule34:'https://rule34.xxx'};
 const STOP=new Set(`pokemon pokemon_(creature) pokemon_(game) pokemon_(anime) highres absurdres commentary commentary_request english_commentary
 translation_request no_humans solo solo_focus 1girl 1boy 2girls 2boys simple_background white_background grey_background black_background
 artist_name signature watermark twitter_username character_name artist_logo looking_at_viewer smile open_mouth closed_mouth standing full_body
 sitting holding animal_focus pokemon_focus outdoors day night dated hat shirt pants long_hair short_hair red_eyes blue_eyes yellow_eyes black_eyes
 black_hair colored_sclera teeth claws tail wings short_sleeves gen_1_pokemon food_name`.split(/\s+/));
-const QAPI=new URLSearchParams(location.search).get('api')||'';
-let cfg={src:'danbooru',api:'',topic:'pokemon',ns:12,rating:'g',pool:200,display:50,minScore:0,since:'',...LS('cfg')},liked=LS('liked')||[],
+let cfg={src:'danbooru',topic:'pokemon',ns:12,rating:'g',pool:200,display:50,minScore:0,since:'',...LS('cfg')},liked=LS('liked')||[],
 customTags=LS('customTags')||[],excludedTags=LS('excludedTags')||[],dismissed=LS('dismissed')||[],
 seen=new Set(LS('seen')||[]),seenHashes=new Set(LS('seenHashes')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[];
+if('api'in cfg){delete cfg.api;SV('cfg',cfg)}
 if(!Array.isArray(customTags))customTags=[];
 if(!Array.isArray(excludedTags))excludedTags=[];
 if(!Array.isArray(dismissed))dismissed=[];
@@ -90,7 +91,7 @@ async function jget(u){const r=await fetch(u),t=await r.text();if(!r.ok){const e
 const hasRequiredTags=tags=>customTags.every(tag=>tags.includes(tag)),
 queryTags=(seed,base)=>[...new Set([base,seed&&seed!=cfg.topic?seed:'',...customTags].filter(Boolean))].join(' ');
 async function search(seed,page,limit=100){
- const b=QAPI||cfg.api||BASE[cfg.src],B=BASE[cfg.src];
+ const b=API_BASE[cfg.src],B=BASE[cfg.src];
  const filters=[...excludedTags.map(t=>'-'+t),+cfg.minScore?`score:>=${cfg.minScore}`:'',cfg.since?`date:>=${cfg.since}`:''].filter(Boolean).join(' ');
  if(cfg.src=='safebooru'){
  const tags=[queryTags(seed,cfg.topic||(!seed?'sort:random':'')),filters].filter(Boolean).join(' ');
@@ -198,7 +199,7 @@ async function run(){
   say(`${out.length} new picks from ${pool.size} candidates. Heart the ones you like — they sharpen the next run.`);scrollTo(0,0)
  }catch(e){say(e.status?`The site answered with an error (${e.status})${e.detail?`: ${e.detail}`:''}. Try again in a minute.`:
   e.name!='TypeError'&&e.message?e.message:
-  'The browser could not reach the site (blocked by CORS, or offline). Try Safebooru under Settings, or set an API address override.')}
+  'The browser could not reach the source or its proxy (blocked by CORS, or offline).')}
  finally{$('#go').disabled=false}}
 $('#go').onclick=run;
 [['t1','v1'],['t2','v2'],['t3','v3']].forEach(([t,v])=>$('#'+t).onclick=()=>{['t1','t2','t3'].forEach(x=>$('#'+x).classList.toggle('on',x==t));
@@ -218,7 +219,7 @@ $('#addInclude').onclick=()=>addTag('includeInput',customTags,'customTags','cust
 $('#addExclude').onclick=()=>addTag('excludeInput',excludedTags,'excludedTags','excludedChips');
 [['includeInput','addInclude'],['excludeInput','addExclude']].forEach(([input,button])=>$('#'+input).onkeydown=e=>{if(e.key=='Enter'){e.preventDefault();$('#'+button).click()}});
 renderTags('customChips',customTags,'customTags');renderTags('excludedChips',excludedTags,'excludedTags');
-[['ns','ns'],['api','api'],['topic','topic'],['pool','pool'],['display','display'],['minScore','minScore'],['since','since']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{cfg[k]=id=='topic'?e.value.trim().replace(/\s+/g,'_').toLowerCase():e.value.trim();if(id=='topic'&&(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg[k])||cfg[k].startsWith('-'))){cfg[k]='pokemon';e.value=cfg[k];say('Enter one valid topic tag, or leave it blank for any topic.')}SV('cfg',cfg)}});
+[['ns','ns'],['topic','topic'],['pool','pool'],['display','display'],['minScore','minScore'],['since','since']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{cfg[k]=id=='topic'?e.value.trim().replace(/\s+/g,'_').toLowerCase():e.value.trim();if(id=='topic'&&(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg[k])||cfg[k].startsWith('-'))){cfg[k]='pokemon';e.value=cfg[k];say('Enter one valid topic tag, or leave it blank for any topic.')}SV('cfg',cfg)}});
 function renderRating(){const e=$('#rating');e.innerHTML='';ratingChoices(cfg.src).forEach(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;e.appendChild(o)});e.value=cfg.rating}
 $('#src').value=cfg.src;renderRating();
 $('#src').onchange=()=>{cfg.src=$('#src').value;cfg.rating=ratingChoices(cfg.src)[0][0];renderRating();SV('cfg',cfg)};

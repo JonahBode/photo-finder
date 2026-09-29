@@ -20,8 +20,8 @@ test("HypnoHub searches obey the two-clause limit and require every included tag
     cfg: { src: "hypnohub", rating: "safe", minScore: 0, since: "" },
     customTags: included,
     excludedTags: ["gore"],
-    QAPI: "",
     BASE: { hypnohub: "https://hypnohub.net" },
+    API_BASE: { hypnohub: "https://photo-finder.jojochess101.workers.dev/hypnohub" },
     POST_BASE: { hypnohub: "https://hypnohub.net" },
     hasRequiredTags: tags => included.every(tag => tags.includes(tag)),
     queryTags: () => "",
@@ -57,7 +57,12 @@ test("topic tags replace Pokémon across sources and blank topic searches broadl
         cfg: { src: source, topic, rating: source === "danbooru" ? "g" : "safe", minScore: 0, since: "" },
         customTags: [],
         excludedTags: [],
-        QAPI: "",
+        API_BASE: {
+          danbooru: "https://photo-finder.jojochess101.workers.dev/danbooru",
+          safebooru: "https://safebooru.org",
+          hypnohub: "https://photo-finder.jojochess101.workers.dev/hypnohub",
+          rule34: "https://photo-finder.jojochess101.workers.dev/rule34",
+        },
         BASE: {
           danbooru: "https://danbooru.donmai.us",
           safebooru: "https://safebooru.org",
@@ -85,6 +90,18 @@ test("topic tags replace Pokémon across sources and blank topic searches broadl
       const tags = requested[0].searchParams.get("tags").split(/\s+/).filter(Boolean);
       assert.equal(tags.includes("league_of_legends"), Boolean(topic), `${source}, topic "${topic}"`);
       assert.ok(!tags.includes("pokemon"), `${source}, topic "${topic}"`);
+      const expectedOrigin = source === "safebooru"
+        ? "https://safebooru.org"
+        : "https://photo-finder.jojochess101.workers.dev";
+      assert.equal(requested[0].origin, expectedOrigin, `${source}, API route`);
     }
   }
+});
+
+test("API proxy is configured in the app rather than exposed as a user override", () => {
+  assert.doesNotMatch(html, /id="api"|API address override|QAPI/);
+  assert.match(script, /const WORKER='https:\/\/photo-finder\.jojochess101\.workers\.dev'/);
+  assert.match(script, /danbooru:`\$\{WORKER\}\/danbooru`/);
+  assert.match(script, /hypnohub:`\$\{WORKER\}\/hypnohub`/);
+  assert.match(script, /rule34:`\$\{WORKER\}\/rule34`/);
 });
