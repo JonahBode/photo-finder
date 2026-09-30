@@ -11,6 +11,9 @@ const searchSource = script.slice(searchStart, searchEnd);
 const rankStart = script.indexOf("function rank");
 const rankEnd = script.indexOf("function card", rankStart);
 const rankSource = script.slice(rankStart, rankEnd);
+const jgetStart = script.indexOf("async function jget");
+const jgetEnd = script.indexOf("const hasRequiredTags", jgetStart);
+const jgetSource = script.slice(jgetStart, jgetEnd);
 
 test("HypnoHub searches obey the two-clause limit and require every included tag", async () => {
   const requested = [];
@@ -102,6 +105,20 @@ test("topic tags replace Pokémon across sources and blank topic searches broadl
       assert.equal(requested[0].origin, expectedOrigin, `${source}, API route`);
     }
   }
+});
+
+test("API HTML responses produce a useful diagnostic instead of a JSON parse error", async () => {
+  const context = {
+    fetch: async () => new Response("<!doctype html><title>Service unavailable</title>", {
+      headers: { "Content-Type": "text/html" },
+    }),
+  };
+  vm.createContext(context);
+  vm.runInContext(`${jgetSource}; globalThis.getJson = jget;`, context);
+  await assert.rejects(
+    context.getJson("https://worker.test/realbooru/index.php"),
+    /HTML page instead of JSON.*Service unavailable.*error page or challenge/,
+  );
 });
 
 test("date range filters return only posts within both inclusive dates", async () => {
