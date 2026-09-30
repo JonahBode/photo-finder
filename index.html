@@ -29,7 +29,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <nav><button id="t1" class="on">Discover</button><button id="t2">Liked (0)</button><button id="t3">Dismissed (0)</button></nav>
 <main id="v1">
 <button class="go" id="go">Find pictures</button><p id="st"></p>
-<details><summary>Search tags</summary><p>Tap built-in tags to turn them off. User exclusion tags can be removed; default exclusions are locked.</p>
+<details><summary>Search tags</summary><p>Tap built-in tags to turn them off. Tap a default exclusion to unlock or relock it; your added exclusions can be removed.</p>
 <div class="chips" id="chips"></div>
 <label>Add included tag<input id="includeInput" placeholder="e.g. pikachu" autocapitalize="off"></label>
 <div class="row"><button id="addInclude" type="button">Add included tag</button></div><div class="chips" id="customChips"></div>
@@ -67,12 +67,15 @@ artist_name signature watermark twitter_username character_name artist_logo look
 sitting holding animal_focus pokemon_focus outdoors day night dated hat shirt pants long_hair short_hair red_eyes blue_eyes yellow_eyes black_eyes
 black_hair colored_sclera teeth claws tail wings short_sleeves gen_1_pokemon food_name`.split(/\s+/));
 let cfg={src:'danbooru',topic:'pokemon',ns:12,rating:'g',pool:200,display:50,minScore:0,since:'',...LS('cfg')},liked=LS('liked')||[],
-customTags=LS('customTags')||[],excludedTags=LS('excludedTags')||[],dismissed=LS('dismissed')||[],
+customTags=LS('customTags')||[],userExcludedTags=LS('excludedTags')||[],unlockedDefaultTags=new Set(Array.isArray(LS('unlockedDefaultTags'))?LS('unlockedDefaultTags'):[]),excludedTags=[],dismissed=LS('dismissed')||[],
 seen=new Set(LS('seen')||[]),seenHashes=new Set(LS('seenHashes')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[];
 if('api'in cfg){delete cfg.api;SV('cfg',cfg)}
 if(!Array.isArray(customTags))customTags=[];
-if(!Array.isArray(excludedTags))excludedTags=[];
-excludedTags=[...new Set([...ALWAYS_EXCLUDED,...excludedTags])];SV('excludedTags',excludedTags);
+if(!Array.isArray(userExcludedTags))userExcludedTags=[];
+unlockedDefaultTags=new Set([...unlockedDefaultTags].filter(tag=>ALWAYS_EXCLUDED.has(tag)));
+userExcludedTags=[...new Set(userExcludedTags.filter(tag=>!ALWAYS_EXCLUDED.has(tag)))];
+function syncExcludedTags(){excludedTags=[...new Set([...userExcludedTags,...[...ALWAYS_EXCLUDED].filter(tag=>!unlockedDefaultTags.has(tag))])];SV('excludedTags',userExcludedTags)}
+syncExcludedTags();
 if(!Array.isArray(dismissed))dismissed=[];
 if(!['danbooru','safebooru','hypnohub','rule34'].includes(cfg.src))cfg.src='danbooru';
 cfg.topic=String(cfg.topic??'pokemon').trim().replace(/\s+/g,'_').toLowerCase();
@@ -212,15 +215,18 @@ function renderSeedTags(){const counts={};liked.forEach(l=>String(l.tags||'').sp
  box.innerHTML='';tags.forEach(s=>{const c=document.createElement('span');c.textContent=s;c.className=off.has(s)?'off':'';
  c.onclick=()=>{off.has(s)?off.delete(s):off.add(s);c.classList.toggle('off');SV('off',[...off])};box.appendChild(c)})}
 renderSeedTags();
-function renderTags(id,tags,key){const box=$('#'+id);box.innerHTML='';tags.forEach((tag,i)=>{const c=document.createElement('span'),locked=key=='excludedTags'&&ALWAYS_EXCLUDED.has(tag);
-c.textContent=locked?tag+' · locked':tag+' ×';c.title=locked?'Always excluded':'Remove '+tag;if(!locked)c.onclick=()=>{tags.splice(i,1);SV(key,tags);renderTags(id,tags,key)};box.appendChild(c)})}
+function renderTags(id,tags,key){const box=$('#'+id);box.innerHTML='';const visible=key=='excludedTags'?[...new Set([...ALWAYS_EXCLUDED,...userExcludedTags])]:tags;
+ visible.forEach(tag=>{const c=document.createElement('span'),isDefault=key=='excludedTags'&&ALWAYS_EXCLUDED.has(tag),locked=isDefault&&!unlockedDefaultTags.has(tag);
+ c.textContent=isDefault?tag+(locked?' · locked':' · unlocked'):tag+' ×';c.title=isDefault?(locked?'Tap to allow this tag':'Tap to exclude this tag'):'Remove '+tag;
+ c.onclick=()=>{if(isDefault){if(locked)unlockedDefaultTags.add(tag);else unlockedDefaultTags.delete(tag);SV('unlockedDefaultTags',[...unlockedDefaultTags]);syncExcludedTags();renderTags(id,tags,key)}
+ else{const i=tags.indexOf(tag);if(i>=0){tags.splice(i,1);SV(key,tags);syncExcludedTags();renderTags(id,tags,key)}}};box.appendChild(c)})}
 function addTag(input,list,key,id){const e=$('#'+input),tag=e.value.trim().replace(/\s+/g,'_').toLowerCase();
 if(!/^[a-z0-9_()!:+.@-]{1,80}$/.test(tag)||tag.startsWith('-')){say('Enter one valid tag (use the excluded-tag list for tags to omit).');return}
 if(!list.includes(tag)){list.push(tag);SV(key,list);renderTags(id,list,key)}e.value=''}
 $('#addInclude').onclick=()=>addTag('includeInput',customTags,'customTags','customChips');
-$('#addExclude').onclick=()=>addTag('excludeInput',excludedTags,'excludedTags','excludedChips');
+$('#addExclude').onclick=()=>addTag('excludeInput',userExcludedTags,'excludedTags','excludedChips');
 [['includeInput','addInclude'],['excludeInput','addExclude']].forEach(([input,button])=>$('#'+input).onkeydown=e=>{if(e.key=='Enter'){e.preventDefault();$('#'+button).click()}});
-renderTags('customChips',customTags,'customTags');renderTags('excludedChips',excludedTags,'excludedTags');
+renderTags('customChips',customTags,'customTags');renderTags('excludedChips',userExcludedTags,'excludedTags');
 [['ns','ns'],['topic','topic'],['pool','pool'],['display','display'],['minScore','minScore'],['since','since']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{cfg[k]=id=='topic'?e.value.trim().replace(/\s+/g,'_').toLowerCase():e.value.trim();if(id=='topic'&&(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg[k])||cfg[k].startsWith('-'))){cfg[k]='pokemon';e.value=cfg[k];say('Enter one valid topic tag, or leave it blank for any topic.')}SV('cfg',cfg)}});
 function renderRating(){const e=$('#rating');e.innerHTML='';ratingChoices(cfg.src).forEach(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;e.appendChild(o)});e.value=cfg.rating}
 $('#src').value=cfg.src;renderRating();

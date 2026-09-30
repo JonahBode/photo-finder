@@ -164,9 +164,9 @@ test("Rule34 applies higher minimum scores in the query and result filter", asyn
   assert.match(html, /<option value="1000">1000\+<\/option>/);
 });
 
-test("default exclusions are permanent and included in Rule34 queries", async () => {
+test("default exclusions can be individually unlocked while custom exclusions stay", async () => {
   const match = script.match(/const ALWAYS_EXCLUDED=new Set\(`([^`]*)`\.split/);
-  assert.ok(match, "expected the immutable default exclusion set");
+  assert.ok(match, "expected the default exclusion set");
   const alwaysExcluded = match[1].split(/\s+/);
   assert.deepEqual(alwaysExcluded, [
     "3d", "3d_(artwork)", "ai_generated", "animal_penis", "anthro", "fart",
@@ -174,8 +174,29 @@ test("default exclusions are permanent and included in Rule34 queries", async ()
     "hyper_balls", "hyper_penis", "hyper_breasts", "inflation", "vore",
     "vomit", "scat",
   ]);
-  assert.match(script, /excludedTags=\[\.\.\.new Set\(\[\.\.\.ALWAYS_EXCLUDED,\.\.\.excludedTags\]\)\]/);
-  assert.match(script, /locked\?'Always excluded'/);
+  assert.match(html, /Tap a default exclusion to unlock or relock it/);
+  assert.match(script, /unlockedDefaultTags\.add\(tag\)/);
+  assert.match(script, /unlockedDefaultTags\.delete\(tag\)/);
+
+  const syncStart = script.indexOf("function syncExcludedTags");
+  const syncEnd = script.indexOf("syncExcludedTags();", syncStart);
+  const syncSource = script.slice(syncStart, syncEnd);
+  const state = {
+    ALWAYS_EXCLUDED: new Set(alwaysExcluded),
+    userExcludedTags: ["custom_tag"],
+    unlockedDefaultTags: new Set(["gore"]),
+    excludedTags: [],
+    SV: (key, value) => { state.saved = [key, [...value]]; },
+  };
+  vm.createContext(state);
+  vm.runInContext(`${syncSource}; syncExcludedTags();`, state);
+  assert.ok(!state.excludedTags.includes("gore"));
+  assert.ok(state.excludedTags.includes("3d"));
+  assert.ok(state.excludedTags.includes("custom_tag"));
+  assert.deepEqual(state.saved, ["excludedTags", ["custom_tag"]]);
+  state.unlockedDefaultTags.delete("gore");
+  vm.runInContext("syncExcludedTags()", state);
+  assert.ok(state.excludedTags.includes("gore"));
 
   let requested;
   const context = {
