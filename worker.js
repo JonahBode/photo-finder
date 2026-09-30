@@ -18,26 +18,29 @@ function response(body, status, origin) {
   return new Response(body || null, { status, headers });
 }
 
+function decodeEntities(value) {
+  return value.replace(/&(?:amp|quot|#39|apos|lt|gt|#\d+|#x[0-9a-f]+);/gi, entity => {
+    const named = { "&amp;": "&", "&quot;": '"', "&#39;": "'", "&apos;": "'", "&lt;": "<", "&gt;": ">" };
+    if (named[entity.toLowerCase()]) return named[entity.toLowerCase()];
+    const code = entity[2].toLowerCase() === "x"
+      ? parseInt(entity.slice(3, -1), 16)
+      : Number(entity.slice(2, -1));
+    return code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff)
+      ? String.fromCodePoint(code)
+      : entity;
+  });
+}
+
 function attributes(markup) {
   const result = {};
   for (const match of markup.matchAll(/([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)) {
-    result[match[1].toLowerCase()] = (match[2] ?? match[3] ?? match[4] ?? "")
-      .replace(/&amp;/gi, "&")
-      .replace(/&quot;/gi, '"')
-      .replace(/&#39;|&apos;/gi, "'")
-      .replace(/&lt;/gi, "<")
-      .replace(/&gt;/gi, ">");
+    result[match[1].toLowerCase()] = decodeEntities(match[2] ?? match[3] ?? match[4] ?? "");
   }
   return result;
 }
 
 function decodeText(value) {
-  return value.replace(/<[^>]*>/g, " ").replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
-    .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
-    .replace(/\s+/g, " ").trim();
+  return decodeEntities(value.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
 }
 
 function listingPosts(html, limit) {
