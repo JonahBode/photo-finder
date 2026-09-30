@@ -46,7 +46,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <label>Date on or after<input id="since" type="date"></label>
 <label>Date on or before<input id="until" type="date"></label>
 <small>Realbooru uses CID, the Unix timestamp of a post change; it may differ from the original upload date.</small>
-<div class="row"><button id="rs">Forget shown pictures</button></div></details>
+<div class="row"><button id="rs">Forget shown pictures</button><button id="resetRule34Ids">Reset Rule34 search position</button></div></details>
 <div class="grid" id="g1"></div></main>
 <main id="v2" hidden><div class="row"><button id="ex">Copy liked as JSON</button></div>
 <label>Import liked images (JSON)<input id="likedFile" type="file" accept="application/json,.json"></label>
@@ -70,7 +70,11 @@ sitting holding animal_focus pokemon_focus outdoors day night dated hat shirt pa
 black_hair colored_sclera teeth claws tail wings short_sleeves gen_1_pokemon food_name`.split(/\s+/));
 let cfg={src:'danbooru',topic:'pokemon',ns:12,rating:'g',pool:200,display:50,minScore:0,since:'',until:'',...LS('cfg')},liked=LS('liked')||[],
 customTags=LS('customTags')||[],userExcludedTags=LS('excludedTags')||[],unlockedDefaultTags=new Set(Array.isArray(LS('unlockedDefaultTags'))?LS('unlockedDefaultTags'):[]),excludedTags=[],dismissed=LS('dismissed')||[],
-seen=new Set(LS('seen')||[]),seenHashes=new Set(LS('seenHashes')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[];
+seen=new Set(LS('seen')||[]),seenHashes=new Set(LS('seenHashes')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[],
+rule34IdCursors=LS('rule34IdCursors')||{};
+if(!rule34IdCursors||typeof rule34IdCursors!='object'||Array.isArray(rule34IdCursors))rule34IdCursors={};
+rule34IdCursors=Object.fromEntries(Object.entries(rule34IdCursors).filter(([key,id])=>
+ typeof key=='string'&&key.length<=2000&&/^\d+$/.test(String(id))&&Number.isSafeInteger(+id)&&+id>0).slice(-200));
 if('api'in cfg){delete cfg.api;SV('cfg',cfg)}
 if(!Array.isArray(customTags))customTags=[];
 if(!Array.isArray(userExcludedTags))userExcludedTags=[];
@@ -104,7 +108,7 @@ async function jget(u){const r=await fetch(u),t=await r.text();if(!r.ok){const e
 const hasRequiredTags=tags=>customTags.every(tag=>tags.includes(tag)),
 queryTags=(seed,base)=>[...new Set([base,seed&&seed!=cfg.topic?seed:'',...customTags].filter(Boolean))].join(' ');
 const dynamicSeeds=counts=>Object.entries(counts).filter(([tag])=>!off.has(tag)).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([tag])=>tag);
-async function search(seed,page,limit=100){
+async function search(seed,page,limit=100,rule34IdBefore={},rule34IdFound={}){
  const b=API_BASE[cfg.src],B=BASE[cfg.src];
  const dateDay=date=>{const raw=String(date??'').trim();if(!raw)return'';if(/^\d+(?:\.\d+)?$/.test(raw)){let n=Number(raw);if(n<1e12)n*=1000;const d=new Date(n);return Number.isNaN(d.getTime())?'':d.toISOString().slice(0,10)}const match=raw.match(/^(\d{4}-\d{2}-\d{2})/);if(match)return match[1];const n=Date.parse(raw);return Number.isNaN(n)?'':new Date(n).toISOString().slice(0,10)};
  const inDateRange=date=>{const day=dateDay(date);return(!cfg.since&&!cfg.until)||!!day&&(!cfg.since||day>=cfg.since)&&(!cfg.until||day<=cfg.until)};
@@ -118,15 +122,19 @@ async function search(seed,page,limit=100){
   .map(p=>({id:'s'+p.id,hash:p.md5||'',tags:p.parsedTags,artist:[],score:+p.score||0,date:p.created_at||'',
    thumb:`${b}/thumbnails/${p.directory}/thumbnail_${p.image.replace(/\.[^.]+$/,'')}.jpg`,url:`${B}/index.php?page=post&s=view&id=${p.id}`}))}
  if(cfg.src=='hypnohub'||cfg.src=='rule34'||cfg.src=='realbooru'){
- let tags;const ratingNames={g:'safe',s:'safe',safe:'safe',q:'questionable',questionable:'questionable',e:'explicit',explicit:'explicit'};
+ let tags,cursorKey='';const ratingNames={g:'safe',s:'safe',safe:'safe',q:'questionable',questionable:'questionable',e:'explicit',explicit:'explicit'};
  if(cfg.src=='hypnohub'){
   const searchTag=cfg.topic||(seed||customTags[0]||'');
   tags=[searchTag,`rating:${cfg.rating}`].filter(Boolean).join(' ');
- }else tags=[queryTags(seed,cfg.topic),`rating:${cfg.rating}`,filters].filter(Boolean).join(' ');
+ }else{tags=[queryTags(seed,cfg.topic),`rating:${cfg.rating}`,filters].filter(Boolean).join(' ');
+  if(cfg.src=='rule34'){cursorKey=tags;const before=Object.hasOwn(rule34IdBefore,cursorKey)?+rule34IdBefore[cursorKey]:0;
+   if(Number.isSafeInteger(before)&&before>0)tags+=` id:<${before}`}}
  const u=cfg.src=='hypnohub'
   ?`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`
   :`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
  const data=await jget(u);
+ if(cfg.src=='rule34'&&Array.isArray(data)){const ids=data.map(p=>Number(p?.id)).filter(id=>Number.isSafeInteger(id)&&id>0);
+  if(ids.length)rule34IdFound[cursorKey]=Math.min(rule34IdFound[cursorKey]||Infinity,...ids)}
  if(['rule34','realbooru'].includes(cfg.src)&&data&&data.success===false)throw Error(data.message||`${cfg.src} search is unavailable.`);
  const posts=Array.isArray(data)?data:Array.isArray(data.post)?data.post:data.post?[data.post]:[];
  const site=POST_BASE[cfg.src];
@@ -138,6 +146,9 @@ async function search(seed,page,limit=100){
     thumb,url:`${site}/index.php?page=post&s=view&id=${encodeURIComponent(p.id)}`} })
   .filter(p=>p.thumb&&inDateRange(p.date)&&
    (cfg.src!='hypnohub'||!excludedTags.some(tag=>p.tags.includes(tag)))) }
+function saveRule34IdCursors(found){const cursors=new Map(Object.entries(rule34IdCursors));
+ for(const [key,id] of Object.entries(found)){const previous=Number(cursors.get(key));cursors.set(key,Number.isSafeInteger(previous)&&previous>0?Math.min(previous,id):id)}
+ rule34IdCursors=Object.fromEntries([...cursors].slice(-200));SV('rule34IdCursors',rule34IdCursors)}
  const t=[queryTags(seed,cfg.topic)+' rating:'+cfg.rating+(seed?' order:score':' order:date'),filters].filter(Boolean).join(' ');
  return (await jget(`${b}/posts.json?limit=${limit}&page=${page}&tags=${encodeURIComponent(t)}`))
  .filter(p=>p.preview_file_url&&!p.is_banned&&p.rating===cfg.rating&&(+p.score||0)>=+cfg.minScore&&
@@ -189,7 +200,8 @@ const showCur=()=>{$('#g1').innerHTML='';cur.forEach((c,i)=>card(c,i,'g1'))},
 showLiked=()=>{$('#g2').innerHTML='';liked.slice().reverse().forEach((c,i)=>card(c,i,'g2'))},
 showDismissed=()=>{$('#g3').innerHTML='';dismissed.slice().reverse().forEach((c,i)=>card(c,i,'g3'))};
 async function run(){
- $('#go').disabled=true;const pool=new Map(),base=new Map(),poolHashes=new Set(),add=(items,isBase=false)=>{
+ $('#go').disabled=true;const pool=new Map(),base=new Map(),poolHashes=new Set(),
+  rule34IdBefore=cfg.src=='rule34'?{...rule34IdCursors}:{},rule34IdFound=Object.create(null),add=(items,isBase=false)=>{
   for(const c of items){if(pool.size>=+cfg.pool)break;if(pool.has(c.id)||seen.has(c.id)||(c.hash&&(seenHashes.has(c.hash)||poolHashes.has(c.hash)))||
    isL(c.id)||isD(c.id)||excludedTags.some(t=>c.tags.includes(t)))continue;
    pool.set(c.id,c);if(c.hash)poolHashes.add(c.hash);if(isBase)base.set(c.id,c)}};
@@ -203,12 +215,12 @@ async function run(){
   const conflicts=customTags.filter(tag=>excludedTags.includes(tag));
   if(conflicts.length){say(`Included tags are also excluded: ${conflicts.join(', ')}. Remove them from Excluded tags.`);return}
   say('Searching for pictures…');
-  add(await search('',1,Math.min(50,+cfg.pool)),true);await sl();
+  add(await search('',1,Math.min(50,+cfg.pool),rule34IdBefore,rule34IdFound),true);await sl();
   for(const [i,s] of seeds.entries()){if(pool.size>=+cfg.pool)break;say(`Searching "${s}" (${i+1}/${seeds.length})…`);
-   try{add(await search(s,1+Math.floor(Math.random()*3),Math.min(100,+cfg.pool-pool.size)))}catch(e){if(!e.status)throw e}await sl()}
+   try{add(await search(s,1+Math.floor(Math.random()*3),Math.min(100,+cfg.pool-pool.size),rule34IdBefore,rule34IdFound))}catch(e){if(!e.status)throw e}await sl()}
   for(let p=2;pool.size<+cfg.pool&&p<=Math.ceil(+cfg.pool/50)+1;p++){
    say(`Filling candidate pool (${pool.size}/${cfg.pool})…`);
-   add(await search('',p,Math.min(100,+cfg.pool-pool.size)),true);await sl()}
+   add(await search('',p,Math.min(100,+cfg.pool-pool.size),rule34IdBefore,rule34IdFound),true);await sl()}
   say('Ranking…');const out=rank(pool,base);
   if(!out.length){say('Nothing new found. Try more tags, or "Forget shown pictures".');return}
   cur.forEach(c=>{seen.add(c.id);if(c.hash)seenHashes.add(c.hash)});
@@ -218,7 +230,7 @@ async function run(){
  }catch(e){say(e.status?`The site answered with an error (${e.status})${e.detail?`: ${e.detail}`:''}. Try again in a minute.`:
   e.name!='TypeError'&&e.message?e.message:
   'The browser could not reach the source or its proxy (blocked by CORS, or offline).')}
- finally{$('#go').disabled=false}}
+ finally{if(cfg.src=='rule34'&&Object.keys(rule34IdFound).length)saveRule34IdCursors(rule34IdFound);$('#go').disabled=false}}
 $('#go').onclick=run;
 [['t1','v1'],['t2','v2'],['t3','v3']].forEach(([t,v])=>$('#'+t).onclick=()=>{['t1','t2','t3'].forEach(x=>$('#'+x).classList.toggle('on',x==t));
  ['v1','v2','v3'].forEach(x=>$('#'+x).hidden=x!=v);if(v=='v2')showLiked();if(v=='v3')showDismissed()});
@@ -267,6 +279,7 @@ $('#importLiked').onclick=async()=>{const status=$('#importStatus');
 $('#clearDismissed').onclick=()=>{dismissed.forEach(c=>{seen.delete(c.id);if(c.hash)seenHashes.delete(c.hash)});
  dismissed=[];SV('dismissed',[]);SV('seen',[...seen].slice(-6000));SV('seenHashes',[...seenHashes].slice(-6000));cnt();showDismissed()};
 $('#rs').onclick=()=>{seen=new Set();seenHashes=new Set();SV('seen',[]);SV('seenHashes',[]);say('Cleared — shown pictures may appear again.')};
+$('#resetRule34Ids').onclick=()=>{rule34IdCursors={};SV('rule34IdCursors',{});say('Rule34 search position reset — the next search starts with the newest matches.')};
 $('#ex').onclick=async()=>{const j=JSON.stringify({liked:liked.map(({id,tags,thumb,url})=>({id,tags,thumb,url}))});
  try{await navigator.clipboard.writeText(j);$('#ex').textContent='Copied!'}catch(e){prompt('Copy this:',j)}};
 cnt();showCur();if(!cur.length)say('Tap "Find pictures" — takes about 20 seconds.');
