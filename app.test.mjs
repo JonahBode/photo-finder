@@ -175,6 +175,34 @@ test("date range filters return only posts within both inclusive dates", async (
   }
 });
 
+test("Rule34 upper date bound handles millisecond timestamps and rejects missing dates", async () => {
+  let requested;
+  const context = {
+    cfg: { src: "rule34", topic: "pokemon", rating: "safe", minScore: 0, since: "", until: "2026-08-31" },
+    customTags: [],
+    excludedTags: [],
+    API_BASE: { rule34: "https://photo-finder.jojochess101.workers.dev/rule34" },
+    BASE: { rule34: "https://api.rule34.xxx" },
+    POST_BASE: { rule34: "https://rule34.xxx" },
+    hasRequiredTags: () => true,
+    queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
+    jget: async url => {
+      requested = new URL(url);
+      return [
+        { id: 1, tags: "pokemon solo", rating: "s", score: 10, created_at: 1788220799000, preview_url: "https://img.test/1.jpg" },
+        { id: 2, tags: "pokemon solo", rating: "s", score: 10, created_at: 1788220800000, preview_url: "https://img.test/2.jpg" },
+        { id: 3, tags: "pokemon solo", rating: "s", score: 10, preview_url: "https://img.test/3.jpg" },
+      ];
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
+
+  const posts = await context.searchPost("", 1, 10);
+  assert.equal(requested.searchParams.get("tags"), "pokemon rating:safe date:<=2026-08-31");
+  assert.deepEqual([...posts.map(post => post.id)], ["r1"]);
+});
+
 test("API proxy is configured in the app rather than exposed as a user override", () => {
   assert.doesNotMatch(html, /id="api"|API address override|QAPI/);
   assert.match(script, /const WORKER='https:\/\/photo-finder\.jojochess101\.workers\.dev'/);

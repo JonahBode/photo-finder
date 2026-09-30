@@ -101,7 +101,8 @@ const dynamicSeeds=counts=>Object.entries(counts).filter(([tag])=>!off.has(tag))
 async function search(seed,page,limit=100){
  const b=API_BASE[cfg.src],B=BASE[cfg.src];
  const filters=[...excludedTags.map(t=>'-'+t),+cfg.minScore?`score:>=${cfg.minScore}`:'',cfg.since?`date:>=${cfg.since}`:'',cfg.until?`date:<=${cfg.until}`:''].filter(Boolean).join(' ');
- const inDateRange=date=>{const day=String(date||'').slice(0,10);return(!cfg.since||day>=cfg.since)&&(!cfg.until||day<=cfg.until)};
+ const dateDay=date=>{const raw=String(date??'').trim();if(!raw)return'';if(/^\d+(?:\.\d+)?$/.test(raw)){let n=Number(raw);if(n<1e12)n*=1000;const d=new Date(n);return Number.isNaN(d.getTime())?'':d.toISOString().slice(0,10)}const match=raw.match(/^(\d{4}-\d{2}-\d{2})/);if(match)return match[1];const n=Date.parse(raw);return Number.isNaN(n)?'':new Date(n).toISOString().slice(0,10)};
+ const inDateRange=date=>{const day=dateDay(date);return(!cfg.since&&!cfg.until)||!!day&&(!cfg.since||day>=cfg.since)&&(!cfg.until||day<=cfg.until)};
  if(cfg.src=='safebooru'){
  const tags=[queryTags(seed,cfg.topic||(!seed?'sort:random':'')),filters].filter(Boolean).join(' ');
  const u=`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
@@ -124,7 +125,7 @@ async function search(seed,page,limit=100){
  const site=POST_BASE[cfg.src];
  return posts.filter(p=>p&&p.id&&p.tags&&(+p.score||0)>=+cfg.minScore&&
    (!p.rating||ratingNames[String(p.rating).toLowerCase()]==cfg.rating)&&hasRequiredTags(String(p.tags).split(/\s+/)))
-  .map(p=>{const rawDate=p.created_at||'',date=/^\d{10}$/.test(String(rawDate))?new Date(+rawDate*1000).toISOString():String(rawDate);
+  .map(p=>{const rawDate=p.created_at||'',date=dateDay(rawDate)||String(rawDate);
    let thumb=p.preview_url||p.sample_url||p.file_url||'';if(thumb.startsWith('//'))thumb='https:'+thumb;
    return{id:(cfg.src=='rule34'?'r':'h')+p.id,hash:p.md5||'',tags:String(p.tags).split(/\s+/),artist:[],score:+p.score||0,date,
     thumb,url:`${site}/index.php?page=post&s=view&id=${encodeURIComponent(p.id)}`} })
