@@ -251,3 +251,16 @@ test("higher-scored posts rank ahead when other tags are identical", () => {
   assert.deepEqual(Array.from(ranked, post => post.id), ["high", "low"]);
   assert.ok(ranked[0].match > ranked[1].match);
 });
+
+test("toggled-off tags remain visible but are skipped as dynamic search seeds", () => {
+  assert.match(script, /\[\.\.\.new Set\(\[\.\.\.P\.seeds,\.\.\.Object\.keys\(counts\)/);
+  const source = script.match(/const dynamicSeeds=counts=>[^;]+;/)?.[0];
+  assert.ok(source, "expected dynamic seed selection helper");
+  const context = { off: new Set(["most_liked"]) };
+  vm.createContext(context);
+  vm.runInContext(`${source}; globalThis.pickSeeds = dynamicSeeds;`, context);
+  assert.deepEqual(
+    context.pickSeeds({ most_liked: 100, allowed_tag: 90, another_allowed: 80 }),
+    ["allowed_tag", "another_allowed"],
+  );
+});

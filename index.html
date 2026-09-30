@@ -29,7 +29,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <nav><button id="t1" class="on">Discover</button><button id="t2">Liked (0)</button><button id="t3">Dismissed (0)</button></nav>
 <main id="v1">
 <button class="go" id="go">Find pictures</button><p id="st"></p>
-<details><summary>Search tags</summary><p>Tap built-in tags to turn them off. Tap a default exclusion to unlock or relock it; your added exclusions can be removed.</p>
+<details><summary>Search tags</summary><p>Tap tags to turn them off. Dimmed tags stay in this pool but aren't used for dynamic searches. Tap a default exclusion to unlock or relock it; your added exclusions can be removed.</p>
 <div class="chips" id="chips"></div>
 <label>Add included tag<input id="includeInput" placeholder="e.g. pikachu" autocapitalize="off"></label>
 <div class="row"><button id="addInclude" type="button">Add included tag</button></div><div class="chips" id="customChips"></div>
@@ -95,6 +95,7 @@ async function jget(u){const r=await fetch(u),t=await r.text();if(!r.ok){const e
  e.detail=t.replace(/\s+/g,' ').trim().slice(0,180);throw e}return t.trim()?JSON.parse(t):[]}
 const hasRequiredTags=tags=>customTags.every(tag=>tags.includes(tag)),
 queryTags=(seed,base)=>[...new Set([base,seed&&seed!=cfg.topic?seed:'',...customTags].filter(Boolean))].join(' ');
+const dynamicSeeds=counts=>Object.entries(counts).filter(([tag])=>!off.has(tag)).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([tag])=>tag);
 async function search(seed,page,limit=100){
  const b=API_BASE[cfg.src],B=BASE[cfg.src];
  const filters=[...excludedTags.map(t=>'-'+t),+cfg.minScore?`score:>=${cfg.minScore}`:'',cfg.since?`date:>=${cfg.since}`:''].filter(Boolean).join(' ');
@@ -182,7 +183,7 @@ async function run(){
    isL(c.id)||isD(c.id)||excludedTags.some(t=>c.tags.includes(t)))continue;
    pool.set(c.id,c);if(c.hash)poolHashes.add(c.hash);if(isBase)base.set(c.id,c)}};
  const counts={};liked.forEach(l=>l.tags.split(/\s+/).forEach(t=>{if(t&&!STOP.has(t)&&!excludedTags.includes(t))counts[t]=(counts[t]||0)+1}));
- const likedSeeds=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([t])=>t);
+ const likedSeeds=dynamicSeeds(counts);
  const seeds=cfg.src=='hypnohub'
   ?cfg.topic?[]:customTags.length?customTags.slice(1):likedSeeds
   :customTags.length?[...customTags]:cfg.topic&&cfg.topic!='pokemon'?[]:[...new Set([...likedSeeds,...(cfg.topic=='pokemon'?shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns):[])])];
