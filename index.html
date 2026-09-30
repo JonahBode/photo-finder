@@ -98,11 +98,12 @@ async function jget(u){const r=await fetch(u),t=await r.text();if(!r.ok){const e
 const hasRequiredTags=tags=>customTags.every(tag=>tags.includes(tag)),
 queryTags=(seed,base)=>[...new Set([base,seed&&seed!=cfg.topic?seed:'',...customTags].filter(Boolean))].join(' ');
 const dynamicSeeds=counts=>Object.entries(counts).filter(([tag])=>!off.has(tag)).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([tag])=>tag);
-async function search(seed,page,limit=100,includeOutOfRange=false){
+async function search(seed,page,limit=100){
  const b=API_BASE[cfg.src],B=BASE[cfg.src];
- const filters=[...excludedTags.map(t=>'-'+t),+cfg.minScore?`score:>=${cfg.minScore}`:'',cfg.src!='rule34'&&cfg.since?`date:>=${cfg.since}`:'',cfg.src!='rule34'&&cfg.until?`date:<=${cfg.until}`:''].filter(Boolean).join(' ');
  const dateDay=date=>{const raw=String(date??'').trim();if(!raw)return'';if(/^\d+(?:\.\d+)?$/.test(raw)){let n=Number(raw);if(n<1e12)n*=1000;const d=new Date(n);return Number.isNaN(d.getTime())?'':d.toISOString().slice(0,10)}const match=raw.match(/^(\d{4}-\d{2}-\d{2})/);if(match)return match[1];const n=Date.parse(raw);return Number.isNaN(n)?'':new Date(n).toISOString().slice(0,10)};
  const inDateRange=date=>{const day=dateDay(date);return(!cfg.since&&!cfg.until)||!!day&&(!cfg.since||day>=cfg.since)&&(!cfg.until||day<=cfg.until)};
+ const rule34CidRange=[cfg.since?`cid:>=${Date.parse(cfg.since+'T00:00:00Z')/1000}`:'',cfg.until?`cid:<=${Date.parse(cfg.until+'T23:59:59Z')/1000}`:''].filter(Boolean);
+ const filters=[...excludedTags.map(t=>'-'+t),+cfg.minScore?`score:>=${cfg.minScore}`:'',...(cfg.src=='rule34'?rule34CidRange:[cfg.since?`date:>=${cfg.since}`:'',cfg.until?`date:<=${cfg.until}`:''])].filter(Boolean).join(' ');
  if(cfg.src=='safebooru'){
  const tags=[queryTags(seed,cfg.topic||(!seed?'sort:random':'')),filters].filter(Boolean).join(' ');
  const u=`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
@@ -115,7 +116,7 @@ async function search(seed,page,limit=100,includeOutOfRange=false){
  if(cfg.src=='hypnohub'){
   const searchTag=cfg.topic||(seed||customTags[0]||'');
   tags=[searchTag,`rating:${cfg.rating}`].filter(Boolean).join(' ');
- }else tags=[queryTags(seed,cfg.topic),`rating:${cfg.rating}`,!seed?'order:date':'',filters].filter(Boolean).join(' ');
+ }else tags=[queryTags(seed,cfg.topic),`rating:${cfg.rating}`,!seed&&!rule34CidRange.length?'order:date':'',filters].filter(Boolean).join(' ');
  const u=cfg.src=='hypnohub'
   ?`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`
   :`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
@@ -125,11 +126,11 @@ async function search(seed,page,limit=100,includeOutOfRange=false){
  const site=POST_BASE[cfg.src];
  return posts.filter(p=>p&&p.id&&p.tags&&(+p.score||0)>=+cfg.minScore&&
    (!p.rating||ratingNames[String(p.rating).toLowerCase()]==cfg.rating)&&hasRequiredTags(String(p.tags).split(/\s+/)))
-  .map(p=>{const rawDate=p.created_at||'',date=dateDay(rawDate)||String(rawDate);
+  .map(p=>{const rawDate=p.created_at||p.cid||'',date=dateDay(rawDate)||String(rawDate);
    let thumb=p.preview_url||p.sample_url||p.file_url||'';if(thumb.startsWith('//'))thumb='https:'+thumb;
    return{id:(cfg.src=='rule34'?'r':'h')+p.id,hash:p.md5||'',tags:String(p.tags).split(/\s+/),artist:[],score:+p.score||0,date,
     thumb,url:`${site}/index.php?page=post&s=view&id=${encodeURIComponent(p.id)}`} })
-  .filter(p=>p.thumb&&(includeOutOfRange||inDateRange(p.date))&&
+  .filter(p=>p.thumb&&inDateRange(p.date)&&
    (cfg.src!='hypnohub'||!excludedTags.some(tag=>p.tags.includes(tag)))) }
  const t=[queryTags(seed,cfg.topic)+' rating:'+cfg.rating+(seed?' order:score':' order:date'),filters].filter(Boolean).join(' ');
  return (await jget(`${b}/posts.json?limit=${limit}&page=${page}&tags=${encodeURIComponent(t)}`))
@@ -138,18 +139,6 @@ async function search(seed,page,limit=100,includeOutOfRange=false){
   !excludedTags.some(tag=>p.tag_string.split(' ').includes(tag))&&hasRequiredTags(p.tag_string.split(' ')))
  .map(p=>({id:'d'+p.id,hash:p.md5||'',tags:p.tag_string.split(' '),artist:(p.tag_string_artist||'').split(' ').filter(Boolean),score:p.score||0,date:p.created_at||'',
   thumb:p.preview_file_url,url:B+'/posts/'+p.id}))}
-const RULE34_DATE_SCAN_LIMIT=50;
-async function searchRule34DateRange(add,isFull,report){
- let page=1,crossedStart=false,exhausted=false;
- for(;page<=RULE34_DATE_SCAN_LIMIT&&!isFull();page++){
- report(`Searching Rule34 date range (page ${page}/${RULE34_DATE_SCAN_LIMIT})…`);
- const posts=await search('',page,100,true);if(!posts.length){exhausted=true;break}
- add(posts.filter(p=>p.date&&(!cfg.since||p.date>=cfg.since)&&(!cfg.until||p.date<=cfg.until)),true);
- if(cfg.since&&posts.every(p=>p.date&&p.date<cfg.since)){crossedStart=true;break}
- if(page<RULE34_DATE_SCAN_LIMIT&&!isFull())await sl()
- }
- return{pages:Math.min(page,RULE34_DATE_SCAN_LIMIT),capped:page>RULE34_DATE_SCAN_LIMIT&&!crossedStart&&!exhausted&&!isFull()};
-}
 const jac=(a,b)=>{let i=0;for(const x of a)if(b.has(x))i++;return i/(a.size+b.size-i||1)};
 function rank(pool,base){
  const cnt2={...P.tc};liked.forEach(l=>l.tags.split(' ').forEach(t=>cnt2[t]=(cnt2[t]||0)+1));
@@ -208,22 +197,18 @@ async function run(){
   const conflicts=customTags.filter(tag=>excludedTags.includes(tag));
   if(conflicts.length){say(`Included tags are also excluded: ${conflicts.join(', ')}. Remove them from Excluded tags.`);return}
   say('Searching for pictures…');
-  const rule34DateRange=cfg.src=='rule34'&&(cfg.since||cfg.until);
-  const dateScan=rule34DateRange?await searchRule34DateRange(items=>add(items,true),()=>pool.size>=+cfg.pool,say):null;
-  if(!rule34DateRange){
-   add(await search('',1,Math.min(50,+cfg.pool)),true);await sl();
-   for(const [i,s] of seeds.entries()){if(pool.size>=+cfg.pool)break;say(`Searching "${s}" (${i+1}/${seeds.length})…`);
-    try{add(await search(s,1+Math.floor(Math.random()*3),Math.min(100,+cfg.pool-pool.size)))}catch(e){if(!e.status)throw e}await sl()}
-   for(let p=2;pool.size<+cfg.pool&&p<=Math.ceil(+cfg.pool/50)+1;p++){
-    say(`Filling candidate pool (${pool.size}/${cfg.pool})…`);
-    add(await search('',p,Math.min(100,+cfg.pool-pool.size)),true);await sl()}
-  }
+  add(await search('',1,Math.min(50,+cfg.pool)),true);await sl();
+  for(const [i,s] of seeds.entries()){if(pool.size>=+cfg.pool)break;say(`Searching "${s}" (${i+1}/${seeds.length})…`);
+   try{add(await search(s,1+Math.floor(Math.random()*3),Math.min(100,+cfg.pool-pool.size)))}catch(e){if(!e.status)throw e}await sl()}
+  for(let p=2;pool.size<+cfg.pool&&p<=Math.ceil(+cfg.pool/50)+1;p++){
+   say(`Filling candidate pool (${pool.size}/${cfg.pool})…`);
+   add(await search('',p,Math.min(100,+cfg.pool-pool.size)),true);await sl()}
   say('Ranking…');const out=rank(pool,base);
-  if(!out.length){say(dateScan?.capped?'Rule34 date scan reached its 5,000-post limit. Try a later start date.':'Nothing new found. Try more tags, or "Forget shown pictures".');return}
+  if(!out.length){say('Nothing new found. Try more tags, or "Forget shown pictures".');return}
   cur.forEach(c=>{seen.add(c.id);if(c.hash)seenHashes.add(c.hash)});
   out.forEach(c=>{seen.add(c.id);if(c.hash)seenHashes.add(c.hash)});
   cur=out;SV('cur',cur);SV('seen',[...seen].slice(-6000));SV('seenHashes',[...seenHashes].slice(-6000));showCur();
-  say(`${out.length} new picks from ${pool.size} candidates. Heart the ones you like — they sharpen the next run.${dateScan?.capped?' Rule34 scan capped at 5,000 posts; results may be incomplete.':''}`);scrollTo(0,0)
+  say(`${out.length} new picks from ${pool.size} candidates. Heart the ones you like — they sharpen the next run.`);scrollTo(0,0)
  }catch(e){say(e.status?`The site answered with an error (${e.status})${e.detail?`: ${e.detail}`:''}. Try again in a minute.`:
   e.name!='TypeError'&&e.message?e.message:
   'The browser could not reach the source or its proxy (blocked by CORS, or offline).')}
