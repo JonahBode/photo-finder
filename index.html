@@ -141,7 +141,7 @@ function rank(pool,base){
  for(const c of pool.values()){if(seen.has(c.id)||(c.hash&&seenHashes.has(c.hash))||isL(c.id)||isD(c.id)||
   !hasRequiredTags(c.tags)||excludedTags.some(t=>c.tags.includes(t))||
   (+c.score||0)<+cfg.minScore||(cfg.since&&(c.date||'').slice(0,10)<cfg.since))continue;const ts=new Set(c.tags);if(L.some(l=>jac(ts,l)>=.85))continue;
-  c.raw=[...ts].reduce((s,t)=>s+(w[t]||0),0)/Math.sqrt(ts.size)+.1*Math.log1p(Math.max(c.score,0));
+  c.raw=[...ts].reduce((s,t)=>s+(w[t]||0),0)/Math.sqrt(ts.size)+.25*Math.log1p(Math.max(+c.score||0,0));
   c.why=[...ts].filter(t=>!STOP.has(t)&&(w[t]||0)>.3).sort((a,b)=>w[b]-w[a]).slice(0,4);rows.push(c)}
  if(!rows.length)return[];rows.sort((a,b)=>b.raw-a.raw);const lo=rows[rows.length-1].raw,hi=rows[0].raw;
  rows.forEach(c=>{c.match=Math.round(100*(hi==lo?1:(c.raw-lo)/(hi-lo)));c.cs=new Set(c.tags.filter(t=>!STOP.has(t)));c.ms=0});

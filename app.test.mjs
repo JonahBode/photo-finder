@@ -8,6 +8,9 @@ const script = html.slice(html.indexOf("<script>") + 8, html.indexOf("</script>"
 const searchStart = script.indexOf("async function search");
 const searchEnd = script.indexOf("const jac=", searchStart);
 const searchSource = script.slice(searchStart, searchEnd);
+const rankStart = script.indexOf("function rank");
+const rankEnd = script.indexOf("function card", rankStart);
+const rankSource = script.slice(rankStart, rankEnd);
 
 test("HypnoHub searches obey the two-clause limit and require every included tag", async () => {
   const requested = [];
@@ -195,4 +198,35 @@ test("default exclusions are permanent and included in Rule34 queries", async ()
   await context.searchPost("", 1, 10);
   const queryTags = requested.searchParams.get("tags").split(/\s+/);
   for (const tag of alwaysExcluded) assert.ok(queryTags.includes(`-${tag}`), tag);
+});
+
+test("higher-scored posts rank ahead when other tags are identical", () => {
+  const context = {
+    P: { tc: {}, n: 0, lk: [] },
+    liked: [],
+    seen: new Set(),
+    seenHashes: new Set(),
+    dismissed: [],
+    excludedTags: [],
+    STOP: new Set(),
+    cfg: { display: 2, minScore: 0, since: "" },
+    hasRequiredTags: () => true,
+    isL: () => false,
+    isD: () => false,
+    jac: (a, b) => {
+      let intersection = 0;
+      for (const tag of a) if (b.has(tag)) intersection++;
+      return intersection / (a.size + b.size - intersection || 1);
+    },
+  };
+  const pool = new Map([
+    ["low", { id: "low", hash: "", tags: ["shared_tag"], artist: [], score: 10, date: "" }],
+    ["high", { id: "high", hash: "", tags: ["shared_tag"], artist: [], score: 100, date: "" }],
+  ]);
+  vm.createContext(context);
+  vm.runInContext(`${rankSource}; globalThis.rankPosts = rank;`, context);
+
+  const ranked = context.rankPosts(pool, new Map());
+  assert.deepEqual(Array.from(ranked, post => post.id), ["high", "low"]);
+  assert.ok(ranked[0].match > ranked[1].match);
 });
