@@ -160,3 +160,39 @@ test("Rule34 applies higher minimum scores in the query and result filter", asyn
   assert.deepEqual(posts.map(post => post.id), ["r2"]);
   assert.match(html, /<option value="1000">1000\+<\/option>/);
 });
+
+test("default exclusions are permanent and included in Rule34 queries", async () => {
+  const match = script.match(/const ALWAYS_EXCLUDED=new Set\(`([^`]*)`\.split/);
+  assert.ok(match, "expected the immutable default exclusion set");
+  const alwaysExcluded = match[1].split(/\s+/);
+  assert.deepEqual(alwaysExcluded, [
+    "3d", "3d_(artwork)", "ai_generated", "animal_penis", "anthro", "fart",
+    "feral", "fur", "furry", "futa", "futanari", "gaping", "gore",
+    "hyper_balls", "hyper_penis", "hyper_breasts", "inflation", "vore",
+    "vomit", "scat",
+  ]);
+  assert.match(script, /excludedTags=\[\.\.\.new Set\(\[\.\.\.ALWAYS_EXCLUDED,\.\.\.excludedTags\]\)\]/);
+  assert.match(script, /locked\?'Always excluded'/);
+
+  let requested;
+  const context = {
+    cfg: { src: "rule34", topic: "pokemon", rating: "safe", minScore: 0, since: "" },
+    customTags: [],
+    excludedTags: alwaysExcluded,
+    API_BASE: { rule34: "https://photo-finder.jojochess101.workers.dev/rule34" },
+    BASE: { rule34: "https://api.rule34.xxx" },
+    POST_BASE: { rule34: "https://rule34.xxx" },
+    hasRequiredTags: () => true,
+    queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
+    jget: async url => {
+      requested = new URL(url);
+      return [];
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
+
+  await context.searchPost("", 1, 10);
+  const queryTags = requested.searchParams.get("tags").split(/\s+/);
+  for (const tag of alwaysExcluded) assert.ok(queryTags.includes(`-${tag}`), tag);
+});

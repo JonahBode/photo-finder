@@ -29,7 +29,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <nav><button id="t1" class="on">Discover</button><button id="t2">Liked (0)</button><button id="t3">Dismissed (0)</button></nav>
 <main id="v1">
 <button class="go" id="go">Find pictures</button><p id="st"></p>
-<details><summary>Search tags</summary><p>Tap built-in tags to turn them off. Tap your tags to remove them.</p>
+<details><summary>Search tags</summary><p>Tap built-in tags to turn them off. User exclusion tags can be removed; default exclusions are locked.</p>
 <div class="chips" id="chips"></div>
 <label>Add included tag<input id="includeInput" placeholder="e.g. pikachu" autocapitalize="off"></label>
 <div class="row"><button id="addInclude" type="button">Add included tag</button></div><div class="chips" id="customChips"></div>
@@ -60,6 +60,7 @@ const BASE={danbooru:'https://danbooru.donmai.us',safebooru:'https://safebooru.o
 const WORKER='https://photo-finder.jojochess101.workers.dev';
 const API_BASE={danbooru:`${WORKER}/danbooru`,safebooru:BASE.safebooru,hypnohub:`${WORKER}/hypnohub`,rule34:`${WORKER}/rule34`};
 const POST_BASE={danbooru:BASE.danbooru,safebooru:BASE.safebooru,hypnohub:BASE.hypnohub,rule34:'https://rule34.xxx'};
+const ALWAYS_EXCLUDED=new Set(`3d 3d_(artwork) ai_generated animal_penis anthro fart feral fur furry futa futanari gaping gore hyper_balls hyper_penis hyper_breasts inflation vore vomit scat`.split(/\s+/));
 const STOP=new Set(`pokemon pokemon_(creature) pokemon_(game) pokemon_(anime) highres absurdres commentary commentary_request english_commentary
 translation_request no_humans solo solo_focus 1girl 1boy 2girls 2boys simple_background white_background grey_background black_background
 artist_name signature watermark twitter_username character_name artist_logo looking_at_viewer smile open_mouth closed_mouth standing full_body
@@ -71,6 +72,7 @@ seen=new Set(LS('seen')||[]),seenHashes=new Set(LS('seenHashes')||[]),off=new Se
 if('api'in cfg){delete cfg.api;SV('cfg',cfg)}
 if(!Array.isArray(customTags))customTags=[];
 if(!Array.isArray(excludedTags))excludedTags=[];
+excludedTags=[...new Set([...ALWAYS_EXCLUDED,...excludedTags])];SV('excludedTags',excludedTags);
 if(!Array.isArray(dismissed))dismissed=[];
 if(!['danbooru','safebooru','hypnohub','rule34'].includes(cfg.src))cfg.src='danbooru';
 cfg.topic=String(cfg.topic??'pokemon').trim().replace(/\s+/g,'_').toLowerCase();
@@ -210,8 +212,8 @@ function renderSeedTags(){const counts={};liked.forEach(l=>String(l.tags||'').sp
  box.innerHTML='';tags.forEach(s=>{const c=document.createElement('span');c.textContent=s;c.className=off.has(s)?'off':'';
  c.onclick=()=>{off.has(s)?off.delete(s):off.add(s);c.classList.toggle('off');SV('off',[...off])};box.appendChild(c)})}
 renderSeedTags();
-function renderTags(id,tags,key){const box=$('#'+id);box.innerHTML='';tags.forEach((tag,i)=>{const c=document.createElement('span');
-c.textContent=tag+' ×';c.title='Remove '+tag;c.onclick=()=>{tags.splice(i,1);SV(key,tags);renderTags(id,tags,key)};box.appendChild(c)})}
+function renderTags(id,tags,key){const box=$('#'+id);box.innerHTML='';tags.forEach((tag,i)=>{const c=document.createElement('span'),locked=key=='excludedTags'&&ALWAYS_EXCLUDED.has(tag);
+c.textContent=locked?tag+' · locked':tag+' ×';c.title=locked?'Always excluded':'Remove '+tag;if(!locked)c.onclick=()=>{tags.splice(i,1);SV(key,tags);renderTags(id,tags,key)};box.appendChild(c)})}
 function addTag(input,list,key,id){const e=$('#'+input),tag=e.value.trim().replace(/\s+/g,'_').toLowerCase();
 if(!/^[a-z0-9_()!:+.@-]{1,80}$/.test(tag)||tag.startsWith('-')){say('Enter one valid tag (use the excluded-tag list for tags to omit).');return}
 if(!list.includes(tag)){list.push(tag);SV(key,list);renderTags(id,list,key)}e.value=''}
