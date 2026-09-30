@@ -181,23 +181,26 @@ export default {
         }
         const candidates = listingPosts(await listingResponse.text(), scrape.limit);
         const posts = [];
-        for (const candidate of candidates) {
-          const postUrl = new URL("/index.php", UPSTREAMS.realbooru);
-          postUrl.searchParams.set("page", "post");
-          postUrl.searchParams.set("s", "view");
-          postUrl.searchParams.set("id", candidate.id);
-          const postResponse = await fetch(postUrl, {
-            headers,
-            signal: AbortSignal.timeout(15000),
-            cf: { cacheEverything: true, cacheTtl: 3600 },
-          });
-          if (postResponse.ok) {
-            const post = detailPost(await postResponse.text(), candidate, scrape.rating);
-            if (post) posts.push(post);
+        for (let i = 0; i < candidates.length; i++) {
+          const candidate = candidates[i];
+          try {
+            const postUrl = new URL("/index.php", UPSTREAMS.realbooru);
+            postUrl.searchParams.set("page", "post");
+            postUrl.searchParams.set("s", "view");
+            postUrl.searchParams.set("id", candidate.id);
+            const postResponse = await fetch(postUrl, {
+              headers,
+              signal: AbortSignal.timeout(15000),
+              cf: { cacheEverything: true, cacheTtl: 3600 },
+            });
+            if (postResponse.ok) {
+              const post = detailPost(await postResponse.text(), candidate, scrape.rating);
+              if (post) posts.push(post);
+            }
+          } catch {
+            // Skip an individual post if it disappears or cannot be fetched.
           }
-          if (candidates.indexOf(candidate) < candidates.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
+          if (i < candidates.length - 1) await new Promise(resolve => setTimeout(resolve, 500));
         }
         const result = response(JSON.stringify(posts), 200, origin);
         result.headers.set("Cache-Control", "public, max-age=30");

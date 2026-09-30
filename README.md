@@ -15,4 +15,8 @@ Rule34 API credentials are optional. If you have a Rule34 API key, configure the
 
 For Rule34, the app remembers the lowest post ID returned for each exact search query and uses `id:<ID` on later searches to continue with older posts. Use **Settings → Reset Rule34 search position** to start again from the newest matches.
 
-Realbooru date bounds use its `cid` Unix-time meta-tag. CID is a post change timestamp and may differ from the original upload date.
+## Realbooru scraping
+
+The linked [`realbooru` package](https://onepub.dev/packages/realbooru) confirms that Realbooru's API is disabled and demonstrates scraping its HTML post listing (`.thumb > a`) and post pages (`.imageContainer`, `#image`, and `tag*` links). The Worker follows those selectors, but deliberately fetches only one listing and up to 8 post pages for each search, with a 500 ms pause between detail requests. It caches listing pages briefly and post pages for an hour.
+
+This is a best-effort compatibility path, not an official API. Scraping may stop working if Realbooru changes its markup and may impose load the site does not intend. Realbooru date filters are unavailable through this path; scores may not be present in scraped pages. A search with a date filter is rejected rather than silently returning misleading results. Redeploy both the Cloudflare Worker and GitHub Pages app to use the change.

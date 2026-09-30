@@ -155,6 +155,43 @@ test("Realbooru XML DAPI responses are converted into post objects", async () =>
   assert.deepEqual([...(await context.getJson("https://worker.test/realbooru")).map(post => ({ ...post }))], [attrs]);
 });
 
+test("Realbooru searches use the bounded HTML-scrape route and accept unavailable scores", async () => {
+  let requested;
+  const context = {
+    cfg: { src: "realbooru", topic: "pokemon", rating: "safe", minScore: 50, since: "", until: "" },
+    customTags: [],
+    excludedTags: [],
+    API_BASE: { realbooru: "https://photo-finder.jojochess101.workers.dev/realbooru" },
+    BASE: { realbooru: "https://realbooru.com" },
+    POST_BASE: { realbooru: "https://realbooru.com" },
+    hasRequiredTags: () => true,
+    queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
+    jget: async url => {
+      requested = new URL(url);
+      return [{
+        id: "42",
+        tags: "pokemon solo",
+        rating: "safe",
+        preview_url: "https://realbooru.com/thumb/42.jpg",
+        file_url: "https://realbooru.com/images/42.jpg",
+      }];
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
+
+  const posts = await context.searchPost("", 1, 100);
+  assert.equal(requested.pathname, "/realbooru/search");
+  assert.equal(requested.searchParams.get("limit"), "8");
+  assert.equal(requested.searchParams.get("page"), "1");
+  assert.equal(requested.searchParams.get("tags"), "pokemon rating:safe score:>=50");
+  assert.deepEqual([...posts.map(post => ({ id: post.id, score: post.score, tags: [...post.tags] }))], [
+    { id: "b42", score: 0, tags: ["pokemon", "solo"] },
+  ]);
+  assert.match(html, /Realbooru scraping fetches at most 8 post pages per search/);
+  assert.match(script, /if\(cfg\.src=='realbooru'&&\(cfg\.since\|\|cfg\.until\)\)/);
+});
+
 test("Realbooru empty XML results produce an empty post list", async () => {
   const context = {
     cfg: { src: "realbooru" },
@@ -197,7 +234,7 @@ test("malformed Realbooru XML remains a clear response-format diagnostic", async
 });
 
 test("date range filters return only posts within both inclusive dates", async () => {
-  for (const source of ["danbooru", "safebooru", "hypnohub", "rule34", "realbooru"]) {
+  for (const source of ["danbooru", "safebooru", "hypnohub", "rule34"]) {
     let requested;
     const cfg = {
       src: source,
@@ -219,7 +256,7 @@ test("date range filters return only posts within both inclusive dates", async (
       tag_string: "pokemon solo",
       rating: source === "danbooru" ? "g" : "safe",
       score: 10,
-      created_at: ["rule34", "hypnohub", "realbooru"].includes(source) ? timestamp : date,
+      created_at: ["rule34", "hypnohub"].includes(source) ? timestamp : date,
       preview_url: `https://img.test/${index + 1}.jpg`,
       preview_file_url: `https://img.test/${index + 1}.jpg`,
       directory: String(index + 1),
@@ -234,21 +271,18 @@ test("date range filters return only posts within both inclusive dates", async (
         safebooru: "https://safebooru.org",
         hypnohub: "https://photo-finder.jojochess101.workers.dev/hypnohub",
         rule34: "https://photo-finder.jojochess101.workers.dev/rule34",
-        realbooru: "https://photo-finder.jojochess101.workers.dev/realbooru",
       },
       BASE: {
         danbooru: "https://danbooru.donmai.us",
         safebooru: "https://safebooru.org",
         hypnohub: "https://hypnohub.net",
         rule34: "https://api.rule34.xxx",
-        realbooru: "https://realbooru.com",
       },
       POST_BASE: {
         danbooru: "https://danbooru.donmai.us",
         safebooru: "https://safebooru.org",
         hypnohub: "https://hypnohub.net",
         rule34: "https://rule34.xxx",
-        realbooru: "https://realbooru.com",
       },
       hasRequiredTags: () => true,
       queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
@@ -263,18 +297,12 @@ test("date range filters return only posts within both inclusive dates", async (
     vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
 
     const results = await context.searchPost("", 1, 10);
-    const prefix = source === "danbooru" ? "d" : source === "safebooru" ? "s" : source === "rule34" ? "r" : source === "realbooru" ? "b" : "h";
+    const prefix = source === "danbooru" ? "d" : source === "safebooru" ? "s" : source === "rule34" ? "r" : "h";
     assert.deepEqual([...results.map(post => post.id)], [`${prefix}2`, `${prefix}3`], source);
     if (source === "danbooru" || source === "safebooru") {
       const terms = requested.searchParams.get("tags");
       assert.ok(terms.includes("date:>=2026-08-01"), source);
       assert.ok(terms.includes("date:<=2026-08-31"), source);
-    }
-    if (source === "realbooru") {
-      const terms = requested.searchParams.get("tags");
-      assert.ok(terms.includes("cid:>=1785542400"), source);
-      assert.ok(terms.includes("cid:<=1788220799"), source);
-      assert.ok(!terms.includes("date:"), source);
     }
     if (source === "rule34") {
       const terms = requested.searchParams.get("tags");
@@ -284,32 +312,9 @@ test("date range filters return only posts within both inclusive dates", async (
   }
 });
 
-test("Realbooru uses CID date bounds and locally checks milliseconds or returned CID", async () => {
-  let requested;
-  const context = {
-    cfg: { src: "realbooru", topic: "pokemon", rating: "safe", minScore: 0, since: "", until: "2026-08-31" },
-    customTags: [],
-    excludedTags: [],
-    API_BASE: { realbooru: "https://photo-finder.jojochess101.workers.dev/realbooru" },
-    BASE: { realbooru: "https://realbooru.com" },
-    POST_BASE: { realbooru: "https://realbooru.com" },
-    hasRequiredTags: () => true,
-    queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
-    jget: async url => {
-      requested = new URL(url);
-      return [
-        { id: 1, tags: "pokemon solo", rating: "s", score: 10, created_at: 1788220800000, cid: 1788220799, preview_url: "https://img.test/1.jpg" },
-        { id: 2, tags: "pokemon solo", rating: "s", score: 10, created_at: 1788220800000, preview_url: "https://img.test/2.jpg" },
-        { id: 3, tags: "pokemon solo", rating: "s", score: 10, cid: 1788220799, preview_url: "https://img.test/3.jpg" },
-      ];
-    },
-  };
-  vm.createContext(context);
-  vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
-
-  const posts = await context.searchPost("", 1, 10);
-  assert.equal(requested.searchParams.get("tags"), "pokemon rating:safe cid:<=1788220799");
-  assert.deepEqual([...posts.map(post => post.id)], ["b1", "b3"]);
+test("Realbooru date filtering is not offered for posts scraped from HTML", () => {
+  assert.match(html, /Date filters are unavailable for Realbooru HTML scraping/);
+  assert.match(script, /if\(cfg\.src=='realbooru'&&\(cfg\.since\|\|cfg\.until\)\)/);
 });
 
 test("API proxy is configured in the app rather than exposed as a user override", () => {
@@ -319,6 +324,7 @@ test("API proxy is configured in the app rather than exposed as a user override"
   assert.match(script, /hypnohub:`\$\{WORKER\}\/hypnohub`/);
   assert.match(script, /rule34:`\$\{WORKER\}\/rule34`/);
   assert.match(script, /realbooru:`\$\{WORKER\}\/realbooru`/);
+  assert.match(script, /`\$\{b\}\/search\?limit=\$\{Math\.min\(limit,8\)\}&page=\$\{page\}&tags=/);
 });
 
 test("Rule34 short rating codes are matched to the selected rating", async () => {
