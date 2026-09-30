@@ -207,6 +207,7 @@ test("Tumblr tagged searches use a persistent timestamp cursor and note-count sc
     excludedTags: [],
     tumblrCursors: {},
     API_BASE: { tumblr: "https://photo-finder.jojochess101.workers.dev/tumblr" },
+    BASE: { tumblr: "https://api.tumblr.com" },
     hasRequiredTags: () => true,
     queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
     jget: async url => { requested.push(new URL(url)); return pages.shift(); },

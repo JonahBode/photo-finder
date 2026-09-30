@@ -303,7 +303,7 @@ function importLiked(raw){const items=Array.isArray(raw)?raw:raw&&Array.isArray(
   const url=typeof item.url=='string'&&/^https?:\/\//i.test(item.url)?item.url:'',
    thumb=typeof (item.thumb||item.preview_url||item.preview_file_url)=='string'&&/^https?:\/\//i.test(item.thumb||item.preview_url||item.preview_file_url)
     ?item.thumb||item.preview_url||item.preview_file_url:'',
-   rawId=item.id==null?'':String(item.id),id=rawId?/^[dshr]\d+$/.test(rawId)?rawId:'import:'+rawId:
+   rawId=item.id==null?'':String(item.id),id=rawId?/^(?:[dshrb]\d+|t\d+(?:-\d+)?)$/.test(rawId)?rawId:'import:'+rawId:
     'import:'+btoa(unescape(encodeURIComponent(tags+'|'+url+'|'+thumb+'|'+i))).replace(/[^a-zA-Z0-9]/g,'').slice(0,48);
   if(!liked.some(l=>l.id==id)) {liked.push({id,tags,thumb,url});added++}});
  SV('liked',liked);cnt();showLiked();renderSeedTags();return added}
