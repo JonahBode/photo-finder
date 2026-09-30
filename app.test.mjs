@@ -260,7 +260,7 @@ test("toggled-off tags remain visible but are skipped as dynamic search seeds", 
   vm.createContext(context);
   vm.runInContext(`${source}; globalThis.pickSeeds = dynamicSeeds;`, context);
   assert.deepEqual(
-    context.pickSeeds({ most_liked: 100, allowed_tag: 90, another_allowed: 80 }),
+    [...context.pickSeeds({ most_liked: 100, allowed_tag: 90, another_allowed: 80 })],
     ["allowed_tag", "another_allowed"],
   );
 });
