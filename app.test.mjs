@@ -109,6 +109,7 @@ test("topic tags replace Pokémon across sources and blank topic searches broadl
 
 test("API HTML responses produce a useful diagnostic instead of a JSON parse error", async () => {
   const context = {
+    cfg: { src: "danbooru" },
     fetch: async () => new Response("<!doctype html><title>Service unavailable</title>", {
       headers: { "Content-Type": "text/html" },
     }),
@@ -117,7 +118,81 @@ test("API HTML responses produce a useful diagnostic instead of a JSON parse err
   vm.runInContext(`${jgetSource}; globalThis.getJson = jget;`, context);
   await assert.rejects(
     context.getJson("https://worker.test/realbooru/index.php"),
-    /HTML page instead of JSON.*Service unavailable.*error page or challenge/,
+    /HTML page instead of JSON.*Service unavailable.*unsupported response/,
+  );
+});
+
+test("Realbooru XML DAPI responses are converted into post objects", async () => {
+  const attrs = {
+    id: "42",
+    tags: "pokemon solo",
+    rating: "s",
+    score: "12",
+    cid: "1785542400",
+    preview_url: "https://img.test/42.jpg",
+  };
+  const context = {
+    cfg: { src: "realbooru" },
+    fetch: async () => new Response(
+      '<?xml version="1.0" encoding="UTF-8"?><posts count="1"><post ' +
+      Object.entries(attrs).map(([key, value]) => `${key}="${value}"`).join(" ") +
+      "/></posts>",
+    ),
+    DOMParser: class {
+      parseFromString() {
+        return {
+          documentElement: { tagName: "posts" },
+          querySelector: () => null,
+          getElementsByTagName: () => [{
+            attributes: Object.entries(attrs).map(([name, value]) => ({ name, value })),
+          }],
+        };
+      }
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${jgetSource}; globalThis.getJson = jget;`, context);
+  assert.deepEqual([...(await context.getJson("https://worker.test/realbooru")).map(post => ({ ...post }))], [attrs]);
+});
+
+test("Realbooru empty XML results produce an empty post list", async () => {
+  const context = {
+    cfg: { src: "realbooru" },
+    fetch: async () => new Response('<?xml version="1.0"?><posts count="0"/>'),
+    DOMParser: class {
+      parseFromString() {
+        return {
+          documentElement: { tagName: "posts" },
+          querySelector: () => null,
+          getElementsByTagName: () => [],
+        };
+      }
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${jgetSource}; globalThis.getJson = jget;`, context);
+  assert.deepEqual([...(await context.getJson("https://worker.test/realbooru"))], []);
+});
+
+test("malformed Realbooru XML remains a clear response-format diagnostic", async () => {
+  const context = {
+    cfg: { src: "realbooru" },
+    fetch: async () => new Response('<?xml version="1.0"?><posts><post>'),
+    DOMParser: class {
+      parseFromString() {
+        return {
+          documentElement: { tagName: "posts" },
+          querySelector: () => ({}),
+          getElementsByTagName: () => [],
+        };
+      }
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${jgetSource}; globalThis.getJson = jget;`, context);
+  await assert.rejects(
+    context.getJson("https://worker.test/realbooru"),
+    /unrecognized XML.*xml version.*unsupported response/,
   );
 });
 

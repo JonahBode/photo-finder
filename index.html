@@ -96,8 +96,11 @@ cnt=()=>{$('#t2').textContent=`Liked (${liked.length})`;$('#t3').textContent=`Di
 const say=t=>$('#st').textContent=t;
 async function jget(u){const r=await fetch(u),t=await r.text();if(!r.ok){const e=new Error('HTTP '+r.status);e.status=r.status;
  e.detail=t.replace(/\s+/g,' ').trim().slice(0,180);throw e}if(!t.trim())return[];try{return JSON.parse(t)}catch(e){
- const detail=t.replace(/\s+/g,' ').trim().slice(0,180),html=t.trimStart().startsWith('<');
- throw Error(`${html?'The API returned an HTML page instead of JSON':'The API returned invalid JSON'}${detail?`: ${detail}`:''}. The source or proxy may be returning an error page or challenge.`)}}
+ if(cfg.src=='realbooru'&&/^\s*(?:<\?xml\b|<posts\b)/i.test(t)){const doc=new DOMParser().parseFromString(t,'application/xml');
+  if(doc.documentElement?.tagName.toLowerCase()=='posts'&&!doc.querySelector('parsererror'))
+   return[...doc.getElementsByTagName('post')].map(node=>Object.fromEntries([...node.attributes].map(a=>[a.name,a.value])))}
+ const detail=t.replace(/\s+/g,' ').trim().slice(0,180),xml=/^\s*<\?xml\b/i.test(t),html=/^\s*<!doctype html|^\s*<html\b/i.test(t);
+ throw Error(`${xml?'The API returned unrecognized XML':html?'The API returned an HTML page instead of JSON':'The API returned invalid JSON'}${detail?`: ${detail}`:''}. The source or proxy may be returning an unsupported response.`)}}
 const hasRequiredTags=tags=>customTags.every(tag=>tags.includes(tag)),
 queryTags=(seed,base)=>[...new Set([base,seed&&seed!=cfg.topic?seed:'',...customTags].filter(Boolean))].join(' ');
 const dynamicSeeds=counts=>Object.entries(counts).filter(([tag])=>!off.has(tag)).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([tag])=>tag);
