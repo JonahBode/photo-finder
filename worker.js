@@ -3,6 +3,7 @@ const UPSTREAMS = {
   danbooru: "https://danbooru.donmai.us",
   hypnohub: "https://hypnohub.net",
   rule34: "https://api.rule34.xxx",
+  realbooru: "https://realbooru.com",
 };
 
 function response(body, status, origin) {
@@ -45,7 +46,7 @@ export default {
       upstream.searchParams.set("page", String(page));
       upstream.searchParams.set("tags", tags);
     } else {
-      const match = url.pathname.match(/^\/(hypnohub|rule34)\/index\.php$/);
+      const match = url.pathname.match(/^\/(hypnohub|rule34|realbooru)\/index\.php$/);
       if (!match) return response('{"error":"Route not found"}', 404, origin);
 
       const source = match[1];

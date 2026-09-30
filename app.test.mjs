@@ -53,7 +53,7 @@ test("HypnoHub searches obey the two-clause limit and require every included tag
 });
 
 test("topic tags replace Pokémon across sources and blank topic searches broadly", async () => {
-  for (const source of ["danbooru", "safebooru", "hypnohub", "rule34"]) {
+  for (const source of ["danbooru", "safebooru", "hypnohub", "rule34", "realbooru"]) {
     for (const topic of ["league_of_legends", ""]) {
       const requested = [];
       const context = {
@@ -65,18 +65,21 @@ test("topic tags replace Pokémon across sources and blank topic searches broadl
           safebooru: "https://safebooru.org",
           hypnohub: "https://photo-finder.jojochess101.workers.dev/hypnohub",
           rule34: "https://photo-finder.jojochess101.workers.dev/rule34",
+          realbooru: "https://photo-finder.jojochess101.workers.dev/realbooru",
         },
         BASE: {
           danbooru: "https://danbooru.donmai.us",
           safebooru: "https://safebooru.org",
           hypnohub: "https://hypnohub.net",
           rule34: "https://api.rule34.xxx",
+          realbooru: "https://realbooru.com",
         },
         POST_BASE: {
           danbooru: "https://danbooru.donmai.us",
           safebooru: "https://safebooru.org",
           hypnohub: "https://hypnohub.net",
           rule34: "https://rule34.xxx",
+          realbooru: "https://realbooru.com",
         },
         hasRequiredTags: () => true,
         queryTags: (seed, base) => [...new Set([base, seed && seed !== topic ? seed : ""].filter(Boolean))].join(" "),
@@ -102,7 +105,7 @@ test("topic tags replace Pokémon across sources and blank topic searches broadl
 });
 
 test("date range filters return only posts within both inclusive dates", async () => {
-  for (const source of ["danbooru", "safebooru", "hypnohub", "rule34"]) {
+  for (const source of ["danbooru", "safebooru", "hypnohub", "rule34", "realbooru"]) {
     let requested;
     const cfg = {
       src: source,
@@ -124,7 +127,7 @@ test("date range filters return only posts within both inclusive dates", async (
       tag_string: "pokemon solo",
       rating: source === "danbooru" ? "g" : "safe",
       score: 10,
-      created_at: source === "rule34" || source === "hypnohub" ? timestamp : date,
+      created_at: ["rule34", "hypnohub", "realbooru"].includes(source) ? timestamp : date,
       preview_url: `https://img.test/${index + 1}.jpg`,
       preview_file_url: `https://img.test/${index + 1}.jpg`,
       directory: String(index + 1),
@@ -139,18 +142,21 @@ test("date range filters return only posts within both inclusive dates", async (
         safebooru: "https://safebooru.org",
         hypnohub: "https://photo-finder.jojochess101.workers.dev/hypnohub",
         rule34: "https://photo-finder.jojochess101.workers.dev/rule34",
+        realbooru: "https://photo-finder.jojochess101.workers.dev/realbooru",
       },
       BASE: {
         danbooru: "https://danbooru.donmai.us",
         safebooru: "https://safebooru.org",
         hypnohub: "https://hypnohub.net",
         rule34: "https://api.rule34.xxx",
+        realbooru: "https://realbooru.com",
       },
       POST_BASE: {
         danbooru: "https://danbooru.donmai.us",
         safebooru: "https://safebooru.org",
         hypnohub: "https://hypnohub.net",
         rule34: "https://rule34.xxx",
+        realbooru: "https://realbooru.com",
       },
       hasRequiredTags: () => true,
       queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
@@ -165,37 +171,42 @@ test("date range filters return only posts within both inclusive dates", async (
     vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
 
     const results = await context.searchPost("", 1, 10);
-    const prefix = source === "danbooru" ? "d" : source === "safebooru" ? "s" : source === "rule34" ? "r" : "h";
+    const prefix = source === "danbooru" ? "d" : source === "safebooru" ? "s" : source === "rule34" ? "r" : source === "realbooru" ? "b" : "h";
     assert.deepEqual([...results.map(post => post.id)], [`${prefix}2`, `${prefix}3`], source);
     if (source === "danbooru" || source === "safebooru") {
       const terms = requested.searchParams.get("tags");
       assert.ok(terms.includes("date:>=2026-08-01"), source);
       assert.ok(terms.includes("date:<=2026-08-31"), source);
     }
-    if (source === "rule34") {
+    if (source === "realbooru") {
       const terms = requested.searchParams.get("tags");
       assert.ok(terms.includes("cid:>=1785542400"), source);
       assert.ok(terms.includes("cid:<=1788220799"), source);
       assert.ok(!terms.includes("date:"), source);
     }
+    if (source === "rule34") {
+      const terms = requested.searchParams.get("tags");
+      assert.ok(terms.includes("date:>=2026-08-01"), source);
+      assert.ok(terms.includes("date:<=2026-08-31"), source);
+    }
   }
 });
 
-test("Rule34 uses CID date bounds and locally checks milliseconds or returned CID", async () => {
+test("Realbooru uses CID date bounds and locally checks milliseconds or returned CID", async () => {
   let requested;
   const context = {
-    cfg: { src: "rule34", topic: "pokemon", rating: "safe", minScore: 0, since: "", until: "2026-08-31" },
+    cfg: { src: "realbooru", topic: "pokemon", rating: "safe", minScore: 0, since: "", until: "2026-08-31" },
     customTags: [],
     excludedTags: [],
-    API_BASE: { rule34: "https://photo-finder.jojochess101.workers.dev/rule34" },
-    BASE: { rule34: "https://api.rule34.xxx" },
-    POST_BASE: { rule34: "https://rule34.xxx" },
+    API_BASE: { realbooru: "https://photo-finder.jojochess101.workers.dev/realbooru" },
+    BASE: { realbooru: "https://realbooru.com" },
+    POST_BASE: { realbooru: "https://realbooru.com" },
     hasRequiredTags: () => true,
     queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
     jget: async url => {
       requested = new URL(url);
       return [
-        { id: 1, tags: "pokemon solo", rating: "s", score: 10, created_at: 1788220799000, preview_url: "https://img.test/1.jpg" },
+        { id: 1, tags: "pokemon solo", rating: "s", score: 10, created_at: 1788220800000, cid: 1788220799, preview_url: "https://img.test/1.jpg" },
         { id: 2, tags: "pokemon solo", rating: "s", score: 10, created_at: 1788220800000, preview_url: "https://img.test/2.jpg" },
         { id: 3, tags: "pokemon solo", rating: "s", score: 10, cid: 1788220799, preview_url: "https://img.test/3.jpg" },
       ];
@@ -206,7 +217,7 @@ test("Rule34 uses CID date bounds and locally checks milliseconds or returned CI
 
   const posts = await context.searchPost("", 1, 10);
   assert.equal(requested.searchParams.get("tags"), "pokemon rating:safe cid:<=1788220799");
-  assert.deepEqual([...posts.map(post => post.id)], ["r1", "r3"]);
+  assert.deepEqual([...posts.map(post => post.id)], ["b1", "b3"]);
 });
 
 test("API proxy is configured in the app rather than exposed as a user override", () => {
@@ -215,6 +226,7 @@ test("API proxy is configured in the app rather than exposed as a user override"
   assert.match(script, /danbooru:`\$\{WORKER\}\/danbooru`/);
   assert.match(script, /hypnohub:`\$\{WORKER\}\/hypnohub`/);
   assert.match(script, /rule34:`\$\{WORKER\}\/rule34`/);
+  assert.match(script, /realbooru:`\$\{WORKER\}\/realbooru`/);
 });
 
 test("Rule34 short rating codes are matched to the selected rating", async () => {
@@ -240,7 +252,7 @@ test("Rule34 short rating codes are matched to the selected rating", async () =>
   vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
 
   const posts = await context.searchPost("", 1, 10);
-  assert.equal(requested.searchParams.get("tags"), "pokemon rating:explicit order:date");
+  assert.equal(requested.searchParams.get("tags"), "pokemon rating:explicit");
   assert.deepEqual(posts.map(post => post.id), ["r1"]);
 });
 

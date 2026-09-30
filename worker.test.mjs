@@ -97,6 +97,33 @@ test("forwards optional Rule34 credentials only to its fixed upstream", async ()
   }
 });
 
+test("proxies Realbooru DAPI requests to its fixed origin", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstream;
+  globalThis.fetch = async url => {
+    upstream = new URL(url);
+    return new Response('[{"id":123}]', {
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  try {
+    const result = await worker.fetch(request(
+      "/realbooru/index.php?page=dapi&s=post&q=index&json=1&limit=20&pid=3&tags=pikachu+cid%3A%3E%3D1785542400",
+      { headers: { Origin: allowedOrigin } },
+    ), {});
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get("Access-Control-Allow-Origin"), allowedOrigin);
+    assert.equal(upstream.origin, "https://realbooru.com");
+    assert.equal(upstream.pathname, "/index.php");
+    assert.equal(upstream.searchParams.get("limit"), "20");
+    assert.equal(upstream.searchParams.get("pid"), "3");
+    assert.equal(upstream.searchParams.get("tags"), "pikachu cid:>=1785542400");
+    assert.deepEqual(await result.json(), [{ id: 123 }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("handles preflight and rejects disallowed origins, methods, and routes", async () => {
   const preflight = await worker.fetch(request("/hypnohub/index.php", {
     method: "OPTIONS",
