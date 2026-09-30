@@ -105,7 +105,7 @@ async function search(seed,page,limit=100){
  if(cfg.src=='hypnohub'){
   const searchTag=cfg.topic||(seed||customTags[0]||'');
   tags=[searchTag,`rating:${cfg.rating}`].filter(Boolean).join(' ');
- }else tags=[queryTags(seed,cfg.topic),`rating:${cfg.src=='rule34'?{safe:'s',questionable:'q',explicit:'e'}[cfg.rating]:cfg.rating}`,filters].filter(Boolean).join(' ');
+ }else tags=[queryTags(seed,cfg.topic),`rating:${cfg.rating}`,filters].filter(Boolean).join(' ');
  const u=cfg.src=='hypnohub'
   ?`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`
   :`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;

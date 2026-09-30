@@ -109,7 +109,7 @@ test("API proxy is configured in the app rather than exposed as a user override"
 test("Rule34 short rating codes are matched to the selected rating", async () => {
   let requested;
   const context = {
-    cfg: { src: "rule34", topic: "pokemon", rating: "safe", minScore: 0, since: "" },
+    cfg: { src: "rule34", topic: "pokemon", rating: "explicit", minScore: 0, since: "" },
     customTags: [],
     excludedTags: [],
     API_BASE: { rule34: "https://photo-finder.jojochess101.workers.dev/rule34" },
@@ -120,8 +120,8 @@ test("Rule34 short rating codes are matched to the selected rating", async () =>
     jget: async url => {
       requested = new URL(url);
       return [
-        { id: 1, tags: "pokemon solo", rating: "s", score: 5, preview_url: "https://img.test/1.jpg" },
-        { id: 2, tags: "pokemon solo", rating: "e", score: 5, preview_url: "https://img.test/2.jpg" },
+        { id: 1, tags: "pokemon solo", rating: "e", score: 5, preview_url: "https://img.test/1.jpg" },
+        { id: 2, tags: "pokemon solo", rating: "s", score: 5, preview_url: "https://img.test/2.jpg" },
       ];
     },
   };
@@ -129,7 +129,7 @@ test("Rule34 short rating codes are matched to the selected rating", async () =>
   vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
 
   const posts = await context.searchPost("", 1, 10);
-  assert.equal(requested.searchParams.get("tags"), "pokemon rating:s");
+  assert.equal(requested.searchParams.get("tags"), "pokemon rating:explicit");
   assert.deepEqual(posts.map(post => post.id), ["r1"]);
 });
 
