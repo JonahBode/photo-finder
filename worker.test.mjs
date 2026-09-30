@@ -187,6 +187,74 @@ test("scrapes a bounded Realbooru result set using the site's listing and post p
   }
 });
 
+test("searches Tumblr tags with a Worker secret and normalizes image posts", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstream;
+  globalThis.fetch = async url => {
+    upstream = new URL(url);
+    return new Response(JSON.stringify({
+      meta: { status: 200 },
+      response: [{
+        id: 123456789012345678,
+        id_string: "123456789012345678",
+        type: "photo",
+        post_url: "https://artist.tumblr.com/post/123456789012345678",
+        tags: ["pokemon", "fan art"],
+        timestamp: 1785542400,
+        note_count: 248,
+        photos: [{
+          original_size: { url: "https://64.media.tumblr.com/original.jpg" },
+          alt_sizes: [
+            { width: 250, url: "https://64.media.tumblr.com/small.jpg" },
+            { width: 500, url: "https://64.media.tumblr.com/medium.jpg" },
+          ],
+        }],
+      }],
+    }), { headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await worker.fetch(request(
+      "/tumblr/search?tag=pokemon&limit=20&before=1785542500",
+      { headers: { Origin: allowedOrigin } },
+    ), { TUMBLR_API_KEY: "worker-only-key" });
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get("Access-Control-Allow-Origin"), allowedOrigin);
+    assert.equal(result.headers.get("Cache-Control"), "public, max-age=60");
+    assert.equal(upstream.origin, "https://api.tumblr.com");
+    assert.equal(upstream.pathname, "/v2/tagged");
+    assert.equal(upstream.searchParams.get("tag"), "pokemon");
+    assert.equal(upstream.searchParams.get("limit"), "20");
+    assert.equal(upstream.searchParams.get("before"), "1785542500");
+    assert.equal(upstream.searchParams.get("api_key"), "worker-only-key");
+    const posts = await result.json();
+    assert.deepEqual(posts, [{
+      id: "123456789012345678-1",
+      tags: "pokemon fan art",
+      score: 248,
+      timestamp: 1785542400,
+      preview_url: "https://64.media.tumblr.com/medium.jpg",
+      file_url: "https://64.media.tumblr.com/original.jpg",
+      post_url: "https://artist.tumblr.com/post/123456789012345678",
+    }]);
+
+    const noSecret = await worker.fetch(request(
+      "/tumblr/search?tag=pokemon",
+      { headers: { Origin: allowedOrigin } },
+    ), {});
+    assert.equal(noSecret.status, 503);
+    assert.match((await noSecret.json()).error, /TUMBLR_API_KEY/);
+    assert.equal(result.headers.get("Access-Control-Allow-Origin"), allowedOrigin);
+
+    const badTag = await worker.fetch(request(
+      "/tumblr/search?tag=%00",
+      { headers: { Origin: allowedOrigin } },
+    ), { TUMBLR_API_KEY: "worker-only-key" });
+    assert.equal(badTag.status, 400);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("handles preflight and rejects disallowed origins, methods, and routes", async () => {
   const preflight = await worker.fetch(request("/hypnohub/index.php", {
     method: "OPTIONS",

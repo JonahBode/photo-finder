@@ -4,6 +4,7 @@ const UPSTREAMS = {
   hypnohub: "https://hypnohub.net",
   rule34: "https://api.rule34.xxx",
   realbooru: "https://realbooru.com",
+  tumblr: "https://api.tumblr.com",
 };
 
 function response(body, status, origin) {
@@ -86,6 +87,37 @@ function detailPost(html, listingPost, rating) {
   };
 }
 
+function tumblrPosts(payload) {
+  const posts = Array.isArray(payload?.response) ? payload.response : [];
+  return posts.flatMap(post => {
+    const images = [];
+    for (const photo of Array.isArray(post.photos) ? post.photos : []) {
+      const sizes = Array.isArray(photo.alt_sizes) ? photo.alt_sizes : [];
+      const preview = sizes.filter(size => size.width <= 640).sort((a, b) => b.width - a.width)[0];
+      const original = photo.original_size?.url;
+      if (original) images.push({ thumb: preview?.url || original, file: original });
+    }
+    for (const block of Array.isArray(post.content) ? post.content : []) {
+      if (block.type !== "image") continue;
+      for (const media of Array.isArray(block.media) ? block.media : []) {
+        if (media.url) images.push({ thumb: media.url, file: media.url });
+      }
+    }
+    const uniqueImages = [...new Map(images.map(image => [image.file, image])).values()];
+    const id = String(post.id_string || post.id || "");
+    if (!/^\d+$/.test(id)) return [];
+    return uniqueImages.map((image, index) => ({
+      id: `${id}-${index + 1}`,
+      tags: (Array.isArray(post.tags) ? post.tags : []).filter(tag => typeof tag === "string").join(" "),
+      score: Number.isFinite(Number(post.note_count)) ? Number(post.note_count) : 0,
+      timestamp: Number.isFinite(Number(post.timestamp)) ? Number(post.timestamp) : 0,
+      preview_url: image.thumb,
+      file_url: image.file,
+      post_url: typeof post.post_url === "string" ? post.post_url : "",
+    }));
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -114,6 +146,23 @@ export default {
       upstream.searchParams.set("limit", String(limit));
       upstream.searchParams.set("page", String(page));
       upstream.searchParams.set("tags", tags);
+    } else if (url.pathname === "/tumblr/search") {
+      const tag = (params.get("tag") || "").trim();
+      const before = params.get("before") || "";
+      const limit = Number(params.get("limit") || 20);
+      if (!tag || tag.length > 80 || /[\u0000-\u001f]/.test(tag) ||
+          !Number.isInteger(limit) || limit < 1 || limit > 20 ||
+          (before && (!/^\d+$/.test(before) || Number(before) < 1))) {
+        return response('{"error":"Invalid Tumblr tag, cursor, or limit"}', 400, origin);
+      }
+      if (!env?.TUMBLR_API_KEY) {
+        return response('{"error":"Tumblr is not configured: set the TUMBLR_API_KEY Worker secret"}', 503, origin);
+      }
+      upstream = new URL("/v2/tagged", UPSTREAMS.tumblr);
+      upstream.searchParams.set("tag", tag);
+      upstream.searchParams.set("limit", String(limit));
+      upstream.searchParams.set("api_key", env.TUMBLR_API_KEY);
+      if (before) upstream.searchParams.set("before", before);
     } else if (url.pathname === "/realbooru/search") {
       const limit = Number(params.get("limit") || 8);
       const page = Number(params.get("page") || 1);
@@ -210,16 +259,43 @@ export default {
         return result;
       }
       const upstreamResponse = await fetch(upstream, {
-        headers: { Accept: "application/json" },
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "PhotoFinder/1.0 (GitHub Pages static app)",
+        },
         signal: AbortSignal.timeout(15000),
+        ...(url.pathname === "/tumblr/search" ? { cf: { cacheEverything: true, cacheTtl: 60 } } : {}),
       });
       const body = await upstreamResponse.text();
-      const result = response(body, upstreamResponse.status, origin);
+      let resultBody = body;
+      let status = upstreamResponse.status;
+      if (url.pathname === "/tumblr/search") {
+        if (!upstreamResponse.ok) {
+          resultBody = JSON.stringify({ error: `Tumblr API returned HTTP ${upstreamResponse.status}` });
+          status = upstreamResponse.status === 429 ? 429 : 502;
+        } else {
+          try {
+            const payload = JSON.parse(body);
+            if (payload?.meta?.status >= 400) {
+              resultBody = JSON.stringify({ error: `Tumblr API returned HTTP ${payload.meta.status}` });
+              status = payload.meta.status === 429 ? 429 : 502;
+            } else {
+              resultBody = JSON.stringify(tumblrPosts(payload));
+            }
+          } catch {
+            resultBody = '{"error":"Tumblr API returned invalid JSON"}';
+            status = 502;
+          }
+        }
+      }
+      const result = response(resultBody, status, origin);
       result.headers.set(
         "Content-Type",
         upstreamResponse.headers.get("Content-Type") || "application/json; charset=utf-8",
       );
-      result.headers.set("Cache-Control", "no-store");
+      result.headers.set("Cache-Control", url.pathname === "/tumblr/search" && status === 200
+        ? "public, max-age=60"
+        : "no-store");
       return result;
     } catch {
       return response('{"error":"Upstream request failed"}', 502, origin);

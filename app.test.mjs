@@ -192,6 +192,49 @@ test("Realbooru searches use the bounded HTML-scrape route and accept unavailabl
   assert.match(script, /if\(cfg\.src=='realbooru'&&\(cfg\.since\|\|cfg\.until\)\)/);
 });
 
+test("Tumblr tagged searches use a persistent timestamp cursor and note-count scores", async () => {
+  const requested = [];
+  const pages = [
+    [
+      { id: "123-1", tags: "pokemon fan_art", score: 248, timestamp: 1785542400, preview_url: "https://media.test/1.jpg", file_url: "https://media.test/1.jpg", post_url: "https://art.tumblr.com/post/123" },
+      { id: "124-1", tags: "pokemon fan_art", score: 199, timestamp: 1785542300, preview_url: "https://media.test/2.jpg", file_url: "https://media.test/2.jpg", post_url: "https://art.tumblr.com/post/124" },
+    ],
+    [{ id: "125-1", tags: "pokemon fan_art", score: 300, timestamp: 1785542200, preview_url: "https://media.test/3.jpg", file_url: "https://media.test/3.jpg", post_url: "https://art.tumblr.com/post/125" }],
+  ];
+  const context = {
+    cfg: { src: "tumblr", topic: "pokemon", rating: "none", minScore: 200, since: "", until: "" },
+    customTags: [],
+    excludedTags: [],
+    tumblrCursors: {},
+    API_BASE: { tumblr: "https://photo-finder.jojochess101.workers.dev/tumblr" },
+    hasRequiredTags: () => true,
+    queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
+    jget: async url => { requested.push(new URL(url)); return pages.shift(); },
+    SV: () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${searchSource}; globalThis.searchPost = search; globalThis.persistCursors = saveTumblrCursors; globalThis.readCursors = () => tumblrCursors;`,
+    context,
+  );
+
+  const found = Object.create(null);
+  const first = await context.searchPost("", 1, 20, {}, {}, {}, found);
+  assert.equal(requested[0].pathname, "/tumblr/search");
+  assert.equal(requested[0].searchParams.get("tag"), "pokemon");
+  assert.equal(requested[0].searchParams.get("limit"), "20");
+  assert.equal(requested[0].searchParams.has("before"), false);
+  assert.deepEqual([...first.map(post => ({ id: post.id, score: post.score }))], [{ id: "t123-1", score: 248 }]);
+  assert.equal(found.pokemon, 1785542300);
+
+  const next = Object.create(null);
+  await context.searchPost("", 1, 20, {}, {}, { pokemon: found.pokemon }, next);
+  assert.equal(requested[1].searchParams.get("before"), "1785542300");
+  assert.equal(next.pokemon, 1785542200);
+  context.persistCursors(next);
+  assert.equal(context.readCursors().pokemon, 1785542200);
+});
+
 test("Realbooru empty XML results produce an empty post list", async () => {
   const context = {
     cfg: { src: "realbooru" },
@@ -354,10 +397,10 @@ test("Rule34 short rating codes are matched to the selected rating", async () =>
   assert.deepEqual(posts.map(post => post.id), ["r1"]);
 });
 
-test("Rule34 applies higher minimum scores in the query and result filter", async () => {
+test("Rule34 accepts an arbitrary integer minimum score and filters results", async () => {
   let requested;
   const context = {
-    cfg: { src: "rule34", topic: "pokemon", rating: "safe", minScore: 250, since: "" },
+    cfg: { src: "rule34", topic: "pokemon", rating: "safe", minScore: 248, since: "" },
     customTags: [],
     excludedTags: [],
     API_BASE: { rule34: "https://photo-finder.jojochess101.workers.dev/rule34" },
@@ -368,8 +411,8 @@ test("Rule34 applies higher minimum scores in the query and result filter", asyn
     jget: async url => {
       requested = new URL(url);
       return [
-        { id: 1, tags: "pokemon solo", rating: "s", score: 249, preview_url: "https://img.test/1.jpg" },
-        { id: 2, tags: "pokemon solo", rating: "s", score: 250, preview_url: "https://img.test/2.jpg" },
+        { id: 1, tags: "pokemon solo", rating: "s", score: 247, preview_url: "https://img.test/1.jpg" },
+        { id: 2, tags: "pokemon solo", rating: "s", score: 248, preview_url: "https://img.test/2.jpg" },
       ];
     },
   };
@@ -377,9 +420,10 @@ test("Rule34 applies higher minimum scores in the query and result filter", asyn
   vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
 
   const posts = await context.searchPost("", 1, 10);
-  assert.ok(requested.searchParams.get("tags").includes("score:>=250"));
+  assert.ok(requested.searchParams.get("tags").includes("score:>=248"));
   assert.deepEqual(posts.map(post => post.id), ["r2"]);
-  assert.match(html, /<option value="1000">1000\+<\/option>/);
+  assert.match(html, /id="minScore" type="number" min="0" max="1000000" step="1"/);
+  assert.doesNotMatch(html, /<select id="minScore"/);
 });
 
 test("Rule34 remembers the lowest fetched ID per query and searches below it next time", async () => {
@@ -430,6 +474,8 @@ test("Rule34 remembers the lowest fetched ID per query and searches below it nex
   assert.match(html, /id="resetRule34Ids">Reset Rule34 search position/);
   assert.match(script, /rule34IdBefore=cfg\.src=='rule34'\?\{\.\.\.rule34IdCursors\}:\{\}/);
   assert.match(script, /rule34IdCursors=\{\};SV\('rule34IdCursors',\{\}\)/);
+  assert.match(html, /id="rule34IdPosition"/);
+  assert.match(script, /query\} → id:<\$\{id\}/);
 });
 
 test("default exclusions can be individually unlocked while custom exclusions stay", async () => {
