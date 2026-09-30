@@ -167,12 +167,44 @@ test("date range filters return only posts within both inclusive dates", async (
     const results = await context.searchPost("", 1, 10);
     const prefix = source === "danbooru" ? "d" : source === "safebooru" ? "s" : source === "rule34" ? "r" : "h";
     assert.deepEqual([...results.map(post => post.id)], [`${prefix}2`, `${prefix}3`], source);
-    if (source !== "hypnohub") {
+    if (source === "danbooru" || source === "safebooru") {
       const terms = requested.searchParams.get("tags");
       assert.ok(terms.includes("date:>=2026-08-01"), source);
       assert.ok(terms.includes("date:<=2026-08-31"), source);
     }
+    if (source === "rule34") {
+      const terms = requested.searchParams.get("tags");
+      assert.ok(!terms.includes("date:"), "Rule34 date bounds must be applied locally");
+      assert.ok(terms.includes("order:date"));
+    }
   }
+});
+
+test("Rule34 date-range scan pages sequentially until results are older than the start", async () => {
+  const helperStart = script.indexOf("async function searchRule34DateRange");
+  const helperEnd = script.indexOf("\n}", helperStart) + 2;
+  const helperSource = script.slice(helperStart, helperEnd);
+  const requestedPages = [];
+  const collected = [];
+  const context = {
+    cfg: { since: "2026-08-01", until: "2026-08-31" },
+    RULE34_DATE_SCAN_LIMIT: 50,
+    search: async (_seed, page) => {
+      requestedPages.push(page);
+      return page === 1
+        ? [{ date: "2026-09-01" }]
+        : page === 2
+          ? [{ date: "2026-08-31" }, { date: "2026-08-15" }, { date: "" }]
+          : [{ date: "2026-07-31" }];
+    },
+    sl: async () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(`${helperSource}; globalThis.scan = searchRule34DateRange;`, context);
+  const result = await context.scan(items => collected.push(...items), () => false, () => {});
+  assert.deepEqual(requestedPages, [1, 2, 3]);
+  assert.deepEqual(collected.map(post => post.date), ["2026-08-31", "2026-08-15"]);
+  assert.equal(result.capped, false);
 });
 
 test("Rule34 upper date bound handles millisecond timestamps and rejects missing dates", async () => {
@@ -199,7 +231,7 @@ test("Rule34 upper date bound handles millisecond timestamps and rejects missing
   vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
 
   const posts = await context.searchPost("", 1, 10);
-  assert.equal(requested.searchParams.get("tags"), "pokemon rating:safe date:<=2026-08-31");
+  assert.equal(requested.searchParams.get("tags"), "pokemon rating:safe order:date");
   assert.deepEqual([...posts.map(post => post.id)], ["r1"]);
 });
 
@@ -234,7 +266,7 @@ test("Rule34 short rating codes are matched to the selected rating", async () =>
   vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
 
   const posts = await context.searchPost("", 1, 10);
-  assert.equal(requested.searchParams.get("tags"), "pokemon rating:explicit");
+  assert.equal(requested.searchParams.get("tags"), "pokemon rating:explicit order:date");
   assert.deepEqual(posts.map(post => post.id), ["r1"]);
 });
 
