@@ -101,6 +101,80 @@ test("topic tags replace Pokémon across sources and blank topic searches broadl
   }
 });
 
+test("date range filters return only posts within both inclusive dates", async () => {
+  for (const source of ["danbooru", "safebooru", "hypnohub", "rule34"]) {
+    let requested;
+    const cfg = {
+      src: source,
+      topic: "pokemon",
+      rating: source === "danbooru" ? "g" : "safe",
+      minScore: 0,
+      since: "2026-08-01",
+      until: "2026-08-31",
+    };
+    const boundaryDates = [
+      ["1785542399", "2026-07-31"],
+      ["1785542400", "2026-08-01"],
+      ["1788220799", "2026-08-31"],
+      ["1788220800", "2026-09-01"],
+    ];
+    const posts = boundaryDates.map(([timestamp, date], index) => ({
+      id: index + 1,
+      tags: "pokemon solo",
+      tag_string: "pokemon solo",
+      rating: source === "danbooru" ? "g" : "safe",
+      score: 10,
+      created_at: source === "rule34" || source === "hypnohub" ? timestamp : date,
+      preview_url: `https://img.test/${index + 1}.jpg`,
+      preview_file_url: `https://img.test/${index + 1}.jpg`,
+      directory: String(index + 1),
+      image: `${index + 1}.jpg`,
+    }));
+    const context = {
+      cfg,
+      customTags: [],
+      excludedTags: [],
+      API_BASE: {
+        danbooru: "https://photo-finder.jojochess101.workers.dev/danbooru",
+        safebooru: "https://safebooru.org",
+        hypnohub: "https://photo-finder.jojochess101.workers.dev/hypnohub",
+        rule34: "https://photo-finder.jojochess101.workers.dev/rule34",
+      },
+      BASE: {
+        danbooru: "https://danbooru.donmai.us",
+        safebooru: "https://safebooru.org",
+        hypnohub: "https://hypnohub.net",
+        rule34: "https://api.rule34.xxx",
+      },
+      POST_BASE: {
+        danbooru: "https://danbooru.donmai.us",
+        safebooru: "https://safebooru.org",
+        hypnohub: "https://hypnohub.net",
+        rule34: "https://rule34.xxx",
+      },
+      hasRequiredTags: () => true,
+      queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
+      jget: async url => {
+        requested = new URL(url);
+        return source === "danbooru" ? posts.map(p => ({ ...p, tag_string_artist: "" }))
+          : source === "safebooru" ? posts
+            : posts.map(p => ({ ...p, id: p.id, tags: p.tags }));
+      },
+    };
+    vm.createContext(context);
+    vm.runInContext(`${searchSource}; globalThis.searchPost = search;`, context);
+
+    const results = await context.searchPost("", 1, 10);
+    const prefix = source === "danbooru" ? "d" : source === "safebooru" ? "s" : source === "rule34" ? "r" : "h";
+    assert.deepEqual([...results.map(post => post.id)], [`${prefix}2`, `${prefix}3`], source);
+    if (source !== "hypnohub") {
+      const terms = requested.searchParams.get("tags");
+      assert.ok(terms.includes("date:>=2026-08-01"), source);
+      assert.ok(terms.includes("date:<=2026-08-31"), source);
+    }
+  }
+});
+
 test("API proxy is configured in the app rather than exposed as a user override", () => {
   assert.doesNotMatch(html, /id="api"|API address override|QAPI/);
   assert.match(script, /const WORKER='https:\/\/photo-finder\.jojochess101\.workers\.dev'/);

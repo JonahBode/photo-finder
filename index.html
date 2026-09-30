@@ -44,6 +44,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <label>Maximum pictures to show<select id="display"><option value="25">25</option><option value="50">50</option><option value="75">75</option></select></label>
 <label>Minimum score<select id="minScore"><option value="0">Any</option><option value="5">5+</option><option value="10">10+</option><option value="20">20+</option><option value="50">50+</option><option value="100">100+</option><option value="250">250+</option><option value="500">500+</option><option value="1000">1000+</option></select></label>
 <label>Created on or after<input id="since" type="date"></label>
+<label>Created on or before<input id="until" type="date"></label>
 <div class="row"><button id="rs">Forget shown pictures</button></div></details>
 <div class="grid" id="g1"></div></main>
 <main id="v2" hidden><div class="row"><button id="ex">Copy liked as JSON</button></div>
@@ -66,7 +67,7 @@ translation_request no_humans solo solo_focus 1girl 1boy 2girls 2boys simple_bac
 artist_name signature watermark twitter_username character_name artist_logo looking_at_viewer smile open_mouth closed_mouth standing full_body
 sitting holding animal_focus pokemon_focus outdoors day night dated hat shirt pants long_hair short_hair red_eyes blue_eyes yellow_eyes black_eyes
 black_hair colored_sclera teeth claws tail wings short_sleeves gen_1_pokemon food_name`.split(/\s+/));
-let cfg={src:'danbooru',topic:'pokemon',ns:12,rating:'g',pool:200,display:50,minScore:0,since:'',...LS('cfg')},liked=LS('liked')||[],
+let cfg={src:'danbooru',topic:'pokemon',ns:12,rating:'g',pool:200,display:50,minScore:0,since:'',until:'',...LS('cfg')},liked=LS('liked')||[],
 customTags=LS('customTags')||[],userExcludedTags=LS('excludedTags')||[],unlockedDefaultTags=new Set(Array.isArray(LS('unlockedDefaultTags'))?LS('unlockedDefaultTags'):[]),excludedTags=[],dismissed=LS('dismissed')||[],
 seen=new Set(LS('seen')||[]),seenHashes=new Set(LS('seenHashes')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[];
 if('api'in cfg){delete cfg.api;SV('cfg',cfg)}
@@ -87,6 +88,7 @@ const ratingChoices=src=>['hypnohub','rule34'].includes(src)?[['safe','Safe'],['
 if(!ratingChoices(cfg.src).some(([value])=>value==cfg.rating))cfg.rating=ratingChoices(cfg.src)[0][0];
 if(![0,5,10,20,50,100,250,500,1000].includes(+cfg.minScore))cfg.minScore=0;
 if(!/^\d{4}-\d{2}-\d{2}$/.test(cfg.since))cfg.since='';
+if(!/^\d{4}-\d{2}-\d{2}$/.test(cfg.until))cfg.until='';
 const sl=()=>new Promise(r=>setTimeout(r,900)),shuf=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
 const isL=id=>liked.some(l=>l.id==id),isD=id=>dismissed.some(d=>d.id==id),
 cnt=()=>{$('#t2').textContent=`Liked (${liked.length})`;$('#t3').textContent=`Dismissed (${dismissed.length})`};
@@ -98,12 +100,13 @@ queryTags=(seed,base)=>[...new Set([base,seed&&seed!=cfg.topic?seed:'',...custom
 const dynamicSeeds=counts=>Object.entries(counts).filter(([tag])=>!off.has(tag)).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([tag])=>tag);
 async function search(seed,page,limit=100){
  const b=API_BASE[cfg.src],B=BASE[cfg.src];
- const filters=[...excludedTags.map(t=>'-'+t),+cfg.minScore?`score:>=${cfg.minScore}`:'',cfg.since?`date:>=${cfg.since}`:''].filter(Boolean).join(' ');
+ const filters=[...excludedTags.map(t=>'-'+t),+cfg.minScore?`score:>=${cfg.minScore}`:'',cfg.since?`date:>=${cfg.since}`:'',cfg.until?`date:<=${cfg.until}`:''].filter(Boolean).join(' ');
+ const inDateRange=date=>{const day=String(date||'').slice(0,10);return(!cfg.since||day>=cfg.since)&&(!cfg.until||day<=cfg.until)};
  if(cfg.src=='safebooru'){
  const tags=[queryTags(seed,cfg.topic||(!seed?'sort:random':'')),filters].filter(Boolean).join(' ');
  const u=`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
  return (await jget(u)).map(p=>{const tags=p.tags.trim().split(/\s+/);return{...p,parsedTags:tags}})
-  .filter(p=>hasRequiredTags(p.parsedTags)&&(+p.score||0)>=+cfg.minScore&&(!cfg.since||(p.created_at||'').slice(0,10)>=cfg.since))
+  .filter(p=>hasRequiredTags(p.parsedTags)&&(+p.score||0)>=+cfg.minScore&&inDateRange(p.created_at))
   .map(p=>({id:'s'+p.id,hash:p.md5||'',tags:p.parsedTags,artist:[],score:+p.score||0,date:p.created_at||'',
    thumb:`${b}/thumbnails/${p.directory}/thumbnail_${p.image.replace(/\.[^.]+$/,'')}.jpg`,url:`${B}/index.php?page=post&s=view&id=${p.id}`}))}
  if(cfg.src=='hypnohub'||cfg.src=='rule34'){
@@ -125,12 +128,12 @@ async function search(seed,page,limit=100){
    let thumb=p.preview_url||p.sample_url||p.file_url||'';if(thumb.startsWith('//'))thumb='https:'+thumb;
    return{id:(cfg.src=='rule34'?'r':'h')+p.id,hash:p.md5||'',tags:String(p.tags).split(/\s+/),artist:[],score:+p.score||0,date,
     thumb,url:`${site}/index.php?page=post&s=view&id=${encodeURIComponent(p.id)}`} })
-  .filter(p=>p.thumb&&(!cfg.since||p.date.slice(0,10)>=cfg.since)&&
+  .filter(p=>p.thumb&&inDateRange(p.date)&&
    (cfg.src!='hypnohub'||!excludedTags.some(tag=>p.tags.includes(tag)))) }
  const t=[queryTags(seed,cfg.topic)+' rating:'+cfg.rating+(seed?' order:score':' order:date'),filters].filter(Boolean).join(' ');
  return (await jget(`${b}/posts.json?limit=${limit}&page=${page}&tags=${encodeURIComponent(t)}`))
  .filter(p=>p.preview_file_url&&!p.is_banned&&p.rating===cfg.rating&&(+p.score||0)>=+cfg.minScore&&
-  (!cfg.since||(p.created_at||'').slice(0,10)>=cfg.since)&&
+  inDateRange(p.created_at)&&
   !excludedTags.some(tag=>p.tag_string.split(' ').includes(tag))&&hasRequiredTags(p.tag_string.split(' ')))
  .map(p=>({id:'d'+p.id,hash:p.md5||'',tags:p.tag_string.split(' '),artist:(p.tag_string_artist||'').split(' ').filter(Boolean),score:p.score||0,date:p.created_at||'',
   thumb:p.preview_file_url,url:B+'/posts/'+p.id}))}
@@ -144,7 +147,7 @@ function rank(pool,base){
  const L=[...P.lk,...liked.map(l=>l.tags)].map(s=>new Set(s.split(' '))),rows=[];
  for(const c of pool.values()){if(seen.has(c.id)||(c.hash&&seenHashes.has(c.hash))||isL(c.id)||isD(c.id)||
   !hasRequiredTags(c.tags)||excludedTags.some(t=>c.tags.includes(t))||
-  (+c.score||0)<+cfg.minScore||(cfg.since&&(c.date||'').slice(0,10)<cfg.since))continue;const ts=new Set(c.tags);if(L.some(l=>jac(ts,l)>=.85))continue;
+  (+c.score||0)<+cfg.minScore||(cfg.since&&(c.date||'').slice(0,10)<cfg.since)||(cfg.until&&(c.date||'').slice(0,10)>cfg.until))continue;const ts=new Set(c.tags);if(L.some(l=>jac(ts,l)>=.85))continue;
   c.raw=[...ts].reduce((s,t)=>s+(w[t]||0),0)/Math.sqrt(ts.size)+.25*Math.log1p(Math.max(+c.score||0,0));
   c.why=[...ts].filter(t=>!STOP.has(t)&&(w[t]||0)>.3).sort((a,b)=>w[b]-w[a]).slice(0,4);rows.push(c)}
  if(!rows.length)return[];rows.sort((a,b)=>b.raw-a.raw);const lo=rows[rows.length-1].raw,hi=rows[0].raw;
@@ -188,6 +191,7 @@ async function run(){
   ?cfg.topic?[]:customTags.length?customTags.slice(1):likedSeeds
   :customTags.length?[...customTags]:cfg.topic&&cfg.topic!='pokemon'?[]:[...new Set([...likedSeeds,...(cfg.topic=='pokemon'?shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns):[])])];
  try{
+  if(cfg.since&&cfg.until&&cfg.since>cfg.until){say('Start date must be on or before end date.');return}
   const conflicts=customTags.filter(tag=>excludedTags.includes(tag));
   if(conflicts.length){say(`Included tags are also excluded: ${conflicts.join(', ')}. Remove them from Excluded tags.`);return}
   say('Searching for pictures…');
@@ -228,7 +232,7 @@ $('#addInclude').onclick=()=>addTag('includeInput',customTags,'customTags','cust
 $('#addExclude').onclick=()=>addTag('excludeInput',userExcludedTags,'excludedTags','excludedChips');
 [['includeInput','addInclude'],['excludeInput','addExclude']].forEach(([input,button])=>$('#'+input).onkeydown=e=>{if(e.key=='Enter'){e.preventDefault();$('#'+button).click()}});
 renderTags('customChips',customTags,'customTags');renderTags('excludedChips',userExcludedTags,'excludedTags');
-[['ns','ns'],['topic','topic'],['pool','pool'],['display','display'],['minScore','minScore'],['since','since']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{cfg[k]=id=='topic'?e.value.trim().replace(/\s+/g,'_').toLowerCase():e.value.trim();if(id=='topic'&&(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg[k])||cfg[k].startsWith('-'))){cfg[k]='pokemon';e.value=cfg[k];say('Enter one valid topic tag, or leave it blank for any topic.')}SV('cfg',cfg)}});
+[['ns','ns'],['topic','topic'],['pool','pool'],['display','display'],['minScore','minScore'],['since','since'],['until','until']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{cfg[k]=id=='topic'?e.value.trim().replace(/\s+/g,'_').toLowerCase():e.value.trim();if(id=='topic'&&(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg[k])||cfg[k].startsWith('-'))){cfg[k]='pokemon';e.value=cfg[k];say('Enter one valid topic tag, or leave it blank for any topic.')}SV('cfg',cfg)}});
 function renderRating(){const e=$('#rating');e.innerHTML='';ratingChoices(cfg.src).forEach(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;e.appendChild(o)});e.value=cfg.rating}
 $('#src').value=cfg.src;renderRating();
 $('#src').onchange=()=>{cfg.src=$('#src').value;cfg.rating=ratingChoices(cfg.src)[0][0];renderRating();SV('cfg',cfg)};
