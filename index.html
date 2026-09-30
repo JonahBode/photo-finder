@@ -36,7 +36,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <label>Add excluded tag<input id="excludeInput" placeholder="e.g. gore" autocapitalize="off"></label>
 <div class="row"><button id="addExclude" type="button">Add excluded tag</button></div><div class="chips" id="excludedChips"></div></details>
 <details><summary>Settings</summary>
-<label>Source<select id="src"><option value="danbooru">Danbooru</option><option value="safebooru">Safebooru</option><option value="hypnohub">HypnoHub (Gelbooru DAPI)</option><option value="rule34">Rule34.xxx (Gelbooru DAPI)</option><option value="realbooru">Realbooru (DAPI)</option></select></label>
+<label>Source<select id="src"><option value="danbooru">Danbooru</option><option value="safebooru">Safebooru</option><option value="hypnohub">HypnoHub (Gelbooru DAPI)</option><option value="rule34">Rule34.xxx (Gelbooru DAPI)</option><option value="realbooru">Realbooru (limited HTML scrape)</option></select></label>
 <label>Topic tag (optional; blank searches any topic)<input id="topic" placeholder="pokemon" autocapitalize="off"></label>
 <label>Rating<select id="rating"><option value="g">General (g)</option><option value="q">Questionable (q)</option><option value="s">Sensitive (s)</option><option value="e">Explicit (e)</option></select></label>
 <label>Built-in tags searched per run<select id="ns"><option>8</option><option>12</option><option>20</option></select></label>
@@ -45,7 +45,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <label>Minimum score<select id="minScore"><option value="0">Any</option><option value="5">5+</option><option value="10">10+</option><option value="20">20+</option><option value="50">50+</option><option value="100">100+</option><option value="250">250+</option><option value="500">500+</option><option value="1000">1000+</option></select></label>
 <label>Date on or after<input id="since" type="date"></label>
 <label>Date on or before<input id="until" type="date"></label>
-<small>Realbooru uses CID, the Unix timestamp of a post change; it may differ from the original upload date.</small>
+<small>Realbooru scraping fetches at most 8 post pages per search. Date filters are unavailable; scores may be missing.</small>
 <div class="row"><button id="rs">Forget shown pictures</button><button id="resetRule34Ids">Reset Rule34 search position</button></div></details>
 <div class="grid" id="g1"></div></main>
 <main id="v2" hidden><div class="row"><button id="ex">Copy liked as JSON</button></div>
@@ -131,14 +131,16 @@ async function search(seed,page,limit=100,rule34IdBefore={},rule34IdFound={}){
    if(Number.isSafeInteger(before)&&before>0)tags+=` id:<${before}`}}
  const u=cfg.src=='hypnohub'
   ?`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`
-  :`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
+  :cfg.src=='realbooru'
+   ?`${b}/search?limit=${Math.min(limit,8)}&page=${page}&tags=${encodeURIComponent(tags)}`
+   :`${b}/index.php?page=dapi&s=post&q=index&json=1&limit=${limit}&pid=${page-1}&tags=${encodeURIComponent(tags)}`;
  const data=await jget(u);
  if(cfg.src=='rule34'&&Array.isArray(data)){const ids=data.map(p=>Number(p?.id)).filter(id=>Number.isSafeInteger(id)&&id>0);
   if(ids.length)rule34IdFound[cursorKey]=Math.min(rule34IdFound[cursorKey]||Infinity,...ids)}
  if(['rule34','realbooru'].includes(cfg.src)&&data&&data.success===false)throw Error(data.message||`${cfg.src} search is unavailable.`);
  const posts=Array.isArray(data)?data:Array.isArray(data.post)?data.post:data.post?[data.post]:[];
  const site=POST_BASE[cfg.src];
- return posts.filter(p=>p&&p.id&&p.tags&&(+p.score||0)>=+cfg.minScore&&
+ return posts.filter(p=>p&&p.id&&p.tags&&(cfg.src=='realbooru'&&p.score==null||(+p.score||0)>=+cfg.minScore)&&
    (!p.rating||ratingNames[String(p.rating).toLowerCase()]==cfg.rating)&&hasRequiredTags(String(p.tags).split(/\s+/)))
   .map(p=>{const rawDate=(cfg.src=='realbooru'?(p.cid||p.created_at):(p.created_at||''))||'',date=dateDay(rawDate)||String(rawDate);
    let thumb=p.preview_url||p.sample_url||p.file_url||'';if(thumb.startsWith('//'))thumb='https:'+thumb;
@@ -211,16 +213,20 @@ async function run(){
   ?cfg.topic?[]:customTags.length?customTags.slice(1):likedSeeds
   :customTags.length?[...customTags]:cfg.topic&&cfg.topic!='pokemon'?[]:[...new Set([...likedSeeds,...(cfg.topic=='pokemon'?shuf(P.seeds.filter(s=>!off.has(s))).slice(0,+cfg.ns):[])])];
  try{
+  if(cfg.src=='realbooru'&&(cfg.since||cfg.until)){throw Error('Date filters are unavailable for Realbooru HTML scraping. Clear the date fields and try again.')}
   if(cfg.since&&cfg.until&&cfg.since>cfg.until){say('Start date must be on or before end date.');return}
   const conflicts=customTags.filter(tag=>excludedTags.includes(tag));
   if(conflicts.length){say(`Included tags are also excluded: ${conflicts.join(', ')}. Remove them from Excluded tags.`);return}
   say('Searching for pictures…');
-  add(await search('',1,Math.min(50,+cfg.pool),rule34IdBefore,rule34IdFound),true);await sl();
-  for(const [i,s] of seeds.entries()){if(pool.size>=+cfg.pool)break;say(`Searching "${s}" (${i+1}/${seeds.length})…`);
-   try{add(await search(s,1+Math.floor(Math.random()*3),Math.min(100,+cfg.pool-pool.size),rule34IdBefore,rule34IdFound))}catch(e){if(!e.status)throw e}await sl()}
-  for(let p=2;pool.size<+cfg.pool&&p<=Math.ceil(+cfg.pool/50)+1;p++){
-   say(`Filling candidate pool (${pool.size}/${cfg.pool})…`);
-   add(await search('',p,Math.min(100,+cfg.pool-pool.size),rule34IdBefore,rule34IdFound),true);await sl()}
+  if(cfg.src=='realbooru')add(await search('',1,8),true);
+  else{
+   add(await search('',1,Math.min(50,+cfg.pool),rule34IdBefore,rule34IdFound),true);await sl();
+   for(const [i,s] of seeds.entries()){if(pool.size>=+cfg.pool)break;say(`Searching "${s}" (${i+1}/${seeds.length})…`);
+    try{add(await search(s,1+Math.floor(Math.random()*3),Math.min(100,+cfg.pool-pool.size),rule34IdBefore,rule34IdFound))}catch(e){if(!e.status)throw e}await sl()}
+   for(let p=2;pool.size<+cfg.pool&&p<=Math.ceil(+cfg.pool/50)+1;p++){
+    say(`Filling candidate pool (${pool.size}/${cfg.pool})…`);
+    add(await search('',p,Math.min(100,+cfg.pool-pool.size),rule34IdBefore,rule34IdFound),true);await sl()}
+  }
   say('Ranking…');const out=rank(pool,base);
   if(!out.length){say('Nothing new found. Try more tags, or "Forget shown pictures".');return}
   cur.forEach(c=>{seen.add(c.id);if(c.hash)seenHashes.add(c.hash)});

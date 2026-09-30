@@ -124,6 +124,69 @@ test("proxies Realbooru DAPI requests to its fixed origin", async () => {
   }
 });
 
+test("scrapes a bounded Realbooru result set using the site's listing and post pages", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const listing = `<span class="thumb"><a href="/index.php?page=post&amp;s=view&amp;id=123"><img src="/thumb/123.jpg"></a></span>
+    <span class="thumb"><a href="/index.php?page=post&amp;s=view&amp;id=456"><img src="/thumb/456.jpg"></a></span>`;
+  globalThis.fetch = async (url, options) => {
+    const upstream = new URL(url);
+    requests.push({ url: upstream, options });
+    if (upstream.searchParams.get("s") === "list") return new Response(listing);
+    const id = upstream.searchParams.get("id");
+    return new Response(`<div class="imageContainer"><img id="image" src="/images/${id}.jpg"></div>
+      <a class="tag-type-general">pokemon</a><a class="tag-type-general">solo</a>`);
+  };
+  try {
+    const result = await worker.fetch(request(
+      "/realbooru/search?limit=8&page=2&tags=pokemon+rating%3Asafe",
+      { headers: { Origin: allowedOrigin } },
+    ), {});
+    const posts = await result.json();
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get("Access-Control-Allow-Origin"), allowedOrigin);
+    assert.equal(result.headers.get("Cache-Control"), "public, max-age=30");
+    assert.equal(requests.length, 3);
+    assert.equal(requests[0].url.origin, "https://realbooru.com");
+    assert.equal(requests[0].url.searchParams.get("page"), "post");
+    assert.equal(requests[0].url.searchParams.get("s"), "list");
+    assert.equal(requests[0].url.searchParams.get("pid"), "42");
+    assert.equal(requests[0].url.searchParams.get("tags"), "pokemon rating:safe");
+    assert.match(requests[0].options.headers["User-Agent"], /PhotoFinder/);
+    assert.deepEqual(posts, [
+      {
+        id: "123",
+        tags: "pokemon solo",
+        rating: "safe",
+        preview_url: "https://realbooru.com/thumb/123.jpg",
+        sample_url: "https://realbooru.com/images/123.jpg",
+        file_url: "https://realbooru.com/images/123.jpg",
+        thumb_url: "https://realbooru.com/thumb/123.jpg",
+      },
+      {
+        id: "456",
+        tags: "pokemon solo",
+        rating: "safe",
+        preview_url: "https://realbooru.com/thumb/456.jpg",
+        sample_url: "https://realbooru.com/images/456.jpg",
+        file_url: "https://realbooru.com/images/456.jpg",
+        thumb_url: "https://realbooru.com/thumb/456.jpg",
+      },
+    ]);
+
+    assert.equal((await worker.fetch(request(
+      "/realbooru/search?limit=9&tags=pokemon+rating%3Asafe",
+      { headers: { Origin: allowedOrigin } },
+    ), {})).status, 400);
+    assert.equal((await worker.fetch(request(
+      "/realbooru/search?limit=2&tags=pokemon",
+      { headers: { Origin: allowedOrigin } },
+    ), {})).status, 400);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("handles preflight and rejects disallowed origins, methods, and routes", async () => {
   const preflight = await worker.fetch(request("/hypnohub/index.php", {
     method: "OPTIONS",
