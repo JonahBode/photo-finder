@@ -376,6 +376,56 @@ test("Rule34 applies higher minimum scores in the query and result filter", asyn
   assert.match(html, /<option value="1000">1000\+<\/option>/);
 });
 
+test("Rule34 remembers the lowest fetched ID per query and searches below it next time", async () => {
+  const requested = [];
+  const responses = [
+    [
+      { id: "18900280", tags: "pokemon solo", rating: "s", score: 5, preview_url: "https://img.test/1.jpg" },
+      { id: "18900274", tags: "pokemon solo", rating: "s", score: 5, preview_url: "https://img.test/2.jpg" },
+    ],
+    [
+      { id: "18900250", tags: "pokemon solo", rating: "s", score: 5, preview_url: "https://img.test/3.jpg" },
+    ],
+  ];
+  const context = {
+    cfg: { src: "rule34", topic: "pokemon", rating: "safe", minScore: 0, since: "", until: "" },
+    customTags: [],
+    excludedTags: [],
+    rule34IdCursors: {},
+    API_BASE: { rule34: "https://photo-finder.jojochess101.workers.dev/rule34" },
+    BASE: { rule34: "https://api.rule34.xxx" },
+    POST_BASE: { rule34: "https://rule34.xxx" },
+    hasRequiredTags: () => true,
+    queryTags: (seed, base) => [base, seed].filter(Boolean).join(" "),
+    jget: async url => {
+      requested.push(new URL(url));
+      return responses.shift();
+    },
+    SV: () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${searchSource}; globalThis.searchPost = search; globalThis.persistCursors = saveRule34IdCursors; globalThis.readCursors = () => rule34IdCursors;`,
+    context,
+  );
+
+  const queryKey = "pokemon rating:safe";
+  const firstRunIds = Object.create(null);
+  await context.searchPost("", 1, 10, {}, firstRunIds);
+  assert.equal(requested[0].searchParams.get("tags"), queryKey);
+  assert.equal(firstRunIds[queryKey], 18900274);
+
+  const nextRunIds = Object.create(null);
+  await context.searchPost("", 1, 10, { [queryKey]: firstRunIds[queryKey] }, nextRunIds);
+  assert.equal(requested[1].searchParams.get("tags"), `${queryKey} id:<18900274`);
+  assert.equal(nextRunIds[queryKey], 18900250);
+  context.persistCursors(nextRunIds);
+  assert.equal(context.readCursors()[queryKey], 18900250);
+  assert.match(html, /id="resetRule34Ids">Reset Rule34 search position/);
+  assert.match(script, /rule34IdBefore=cfg\.src=='rule34'\?\{\.\.\.rule34IdCursors\}:\{\}/);
+  assert.match(script, /rule34IdCursors=\{\};SV\('rule34IdCursors',\{\}\)/);
+});
+
 test("default exclusions can be individually unlocked while custom exclusions stay", async () => {
   const match = script.match(/const ALWAYS_EXCLUDED=new Set\(`([^`]*)`\.split/);
   assert.ok(match, "expected the default exclusion set");

@@ -146,9 +146,6 @@ async function search(seed,page,limit=100,rule34IdBefore={},rule34IdFound={}){
     thumb,url:`${site}/index.php?page=post&s=view&id=${encodeURIComponent(p.id)}`} })
   .filter(p=>p.thumb&&inDateRange(p.date)&&
    (cfg.src!='hypnohub'||!excludedTags.some(tag=>p.tags.includes(tag)))) }
-function saveRule34IdCursors(found){const cursors=new Map(Object.entries(rule34IdCursors));
- for(const [key,id] of Object.entries(found)){const previous=Number(cursors.get(key));cursors.set(key,Number.isSafeInteger(previous)&&previous>0?Math.min(previous,id):id)}
- rule34IdCursors=Object.fromEntries([...cursors].slice(-200));SV('rule34IdCursors',rule34IdCursors)}
  const t=[queryTags(seed,cfg.topic)+' rating:'+cfg.rating+(seed?' order:score':' order:date'),filters].filter(Boolean).join(' ');
  return (await jget(`${b}/posts.json?limit=${limit}&page=${page}&tags=${encodeURIComponent(t)}`))
  .filter(p=>p.preview_file_url&&!p.is_banned&&p.rating===cfg.rating&&(+p.score||0)>=+cfg.minScore&&
@@ -156,6 +153,9 @@ function saveRule34IdCursors(found){const cursors=new Map(Object.entries(rule34I
   !excludedTags.some(tag=>p.tag_string.split(' ').includes(tag))&&hasRequiredTags(p.tag_string.split(' ')))
  .map(p=>({id:'d'+p.id,hash:p.md5||'',tags:p.tag_string.split(' '),artist:(p.tag_string_artist||'').split(' ').filter(Boolean),score:p.score||0,date:p.created_at||'',
   thumb:p.preview_file_url,url:B+'/posts/'+p.id}))}
+function saveRule34IdCursors(found){const cursors=new Map(Object.entries(rule34IdCursors));
+ for(const [key,id] of Object.entries(found)){const previous=Number(cursors.get(key));cursors.set(key,Number.isSafeInteger(previous)&&previous>0?Math.min(previous,id):id)}
+ rule34IdCursors=Object.fromEntries([...cursors].slice(-200));SV('rule34IdCursors',rule34IdCursors)}
 const jac=(a,b)=>{let i=0;for(const x of a)if(b.has(x))i++;return i/(a.size+b.size-i||1)};
 function rank(pool,base){
  const cnt2={...P.tc};liked.forEach(l=>l.tags.split(' ').forEach(t=>cnt2[t]=(cnt2[t]||0)+1));
