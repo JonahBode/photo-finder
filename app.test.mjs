@@ -585,6 +585,7 @@ test("toggled-off tags remain visible but are skipped as dynamic search seeds", 
 
 test("saved photo URLs import as liked links and direct image URLs get previews", () => {
   const context = {
+    URL,
     liked: [],
     SV: () => {},
     cnt: () => {},
