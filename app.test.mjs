@@ -617,13 +617,85 @@ test("saved photo URLs import as liked links and direct image URLs get previews"
   assert.throws(() => context.addLikedUrls("javascript:alert(1)", "pokemon"));
 });
 
-test("discovery controls allow adjustable output and search every selected tag", () => {
+test("discovery controls allow adjustable output and search every selected seed", async () => {
   assert.match(html, /<label>Maximum pictures to show<input id="display" type="number" min="1" max="1000" step="1"/);
   assert.match(script, /id=='display'\?1000/);
   assert.match(html, /<nav>[\s\S]*<button class="go" id="go">Find pictures<\/button><\/nav>/);
   assert.match(script, /\$\('#go'\)\.hidden=t!='t1'/);
   assert.doesNotMatch(runSource, /cfg\.pool/);
-  assert.match(runSource, /for\(const \[i,s\] of seeds\.entries\(\)\)/);
-  assert.match(runSource, /search\(s,1\+Math\.floor\(Math\.random\(\)\*3\),100/);
-  assert.match(runSource, /!seeds\.length&&pool\.size<\+cfg\.display/);
+  const calls = [];
+  const context = {
+    $: () => ({ disabled: false }),
+    cfg: { src: "danbooru", topic: "pokemon", ns: 20, display: 50, minScore: 0, since: "", until: "" },
+    P: { seeds: Array.from({ length: 20 }, (_, i) => `seed_${i}`) },
+    liked: [],
+    customTags: [],
+    excludedTags: [],
+    seen: new Set(),
+    seenHashes: new Set(),
+    off: new Set(),
+    rule34IdCursors: {},
+    tumblrCursors: {},
+    dynamicSeeds: () => [],
+    shuf: tags => tags,
+    isL: () => false,
+    isD: () => false,
+    search: async (...args) => { calls.push(args); return []; },
+    say: () => {},
+    sl: async () => {},
+    rank: () => [],
+    showCur: () => {},
+    SV: () => {},
+    scrollTo: () => {},
+    saveRule34IdCursors: () => {},
+    saveTumblrCursors: () => {},
+    renderRule34IdPosition: () => {},
+    cur: [],
+    STOP: new Set(),
+  };
+  vm.createContext(context);
+  vm.runInContext(`${runSource}; globalThis.runSearch = run;`, context);
+  await context.runSearch();
+  assert.deepEqual(calls.slice(1).map(([seed, , limit]) => [seed, limit]), context.P.seeds.map(seed => [seed, 100]));
+});
+
+test("tagless discovery uses consistent page sizes and stops after reaching the display target", async () => {
+  const calls = [];
+  let nextId = 0;
+  const context = {
+    $: () => ({ disabled: false }),
+    cfg: { src: "danbooru", topic: "mewtwo", ns: 20, display: 120, minScore: 0, since: "", until: "" },
+    P: { seeds: [] },
+    liked: [],
+    customTags: [],
+    excludedTags: [],
+    seen: new Set(),
+    seenHashes: new Set(),
+    off: new Set(),
+    rule34IdCursors: {},
+    tumblrCursors: {},
+    dynamicSeeds: () => [],
+    shuf: tags => tags,
+    isL: () => false,
+    isD: () => false,
+    search: async (seed, page, limit) => {
+      calls.push({ seed, page, limit });
+      return Array.from({ length: 50 }, () => ({ id: `post-${nextId++}`, hash: "", tags: [], score: 0, date: "" }));
+    },
+    say: () => {},
+    sl: async () => {},
+    rank: () => [],
+    showCur: () => {},
+    SV: () => {},
+    scrollTo: () => {},
+    saveRule34IdCursors: () => {},
+    saveTumblrCursors: () => {},
+    renderRule34IdPosition: () => {},
+    cur: [],
+    STOP: new Set(),
+  };
+  vm.createContext(context);
+  vm.runInContext(`${runSource}; globalThis.runSearch = run;`, context);
+  await context.runSearch();
+  assert.deepEqual(calls.map(({ page, limit }) => [page, limit]), [[1, 50], [2, 50], [3, 50]]);
 });
