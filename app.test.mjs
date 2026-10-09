@@ -14,6 +14,9 @@ const rankSource = script.slice(rankStart, rankEnd);
 const jgetStart = script.indexOf("async function jget");
 const jgetEnd = script.indexOf("const hasRequiredTags", jgetStart);
 const jgetSource = script.slice(jgetStart, jgetEnd);
+const urlImportStart = script.indexOf("function importLikedUrls");
+const urlImportEnd = script.indexOf("$('#addLikedUrls')", urlImportStart);
+const urlImportSource = script.slice(urlImportStart, urlImportEnd);
 
 test("HypnoHub searches obey the two-clause limit and require every included tag", async () => {
   const requested = [];
@@ -578,4 +581,34 @@ test("toggled-off tags remain visible but are skipped as dynamic search seeds", 
     [...context.pickSeeds({ most_liked: 100, allowed_tag: 90, another_allowed: 80 })],
     ["allowed_tag", "another_allowed"],
   );
+});
+
+test("saved photo URLs import as liked links and direct image URLs get previews", () => {
+  const context = {
+    liked: [],
+    SV: () => {},
+    cnt: () => {},
+    showLiked: () => {},
+    renderSeedTags: () => {},
+  };
+  vm.createContext(context);
+  vm.runInContext(`${urlImportSource}; globalThis.addLikedUrls = importLikedUrls;`, context);
+
+  assert.equal(
+    context.addLikedUrls(
+      "https://images.example/art.jpg?size=large\nhttps://danbooru.donmai.us/posts/123",
+      "Pokemon Pikachu solo",
+    ),
+    2,
+  );
+  assert.equal(context.liked.length, 2);
+  assert.equal(context.liked[0].thumb, "https://images.example/art.jpg?size=large");
+  assert.equal(context.liked[0].tags, "pokemon pikachu solo");
+  assert.equal(context.liked[1].thumb, "");
+  assert.equal(context.liked[1].url, "https://danbooru.donmai.us/posts/123");
+  assert.equal(
+    context.addLikedUrls("https://danbooru.donmai.us/posts/123", "pokemon solo"),
+    0,
+  );
+  assert.throws(() => context.addLikedUrls("javascript:alert(1)", "pokemon"));
 });
