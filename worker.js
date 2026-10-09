@@ -1,10 +1,18 @@
 const ALLOWED_ORIGIN = "https://jonahbode.github.io";
 const UPSTREAMS = {
   danbooru: "https://danbooru.donmai.us",
+  safebooru: "https://safebooru.org",
   hypnohub: "https://hypnohub.net",
   rule34: "https://api.rule34.xxx",
   realbooru: "https://realbooru.com",
   tumblr: "https://api.tumblr.com",
+};
+const POST_PAGES = {
+  danbooru: UPSTREAMS.danbooru,
+  safebooru: UPSTREAMS.safebooru,
+  hypnohub: UPSTREAMS.hypnohub,
+  rule34: "https://rule34.xxx",
+  realbooru: UPSTREAMS.realbooru,
 };
 
 function response(body, status, origin) {
@@ -87,6 +95,27 @@ function detailPost(html, listingPost, rating) {
   };
 }
 
+function lookupHtmlPost(source, id, html) {
+  const image = html.match(/<img\b([^>]*\bid\s*=\s*(?:"image"|'image')[^>]*)>/i);
+  const imageUrl = image && attributes(image[1]).src;
+  const tags = [];
+  for (const anchor of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)) {
+    const classes = (attributes(anchor[1]).class || "").split(/\s+/);
+    const tag = decodeText(anchor[2]);
+    if (classes.some(name => name.startsWith("tag")) && tag && !tags.includes(tag)) tags.push(tag);
+  }
+  if (!tags.length) return null;
+  const url = source === "danbooru"
+    ? `${POST_PAGES.danbooru}/posts/${id}`
+    : `${POST_PAGES[source]}/index.php?page=post&s=view&id=${id}`;
+  return {
+    id: `${{ danbooru: "d", safebooru: "s", hypnohub: "h", rule34: "r", realbooru: "b" }[source]}${id}`,
+    tags: tags.join(" "),
+    thumb: imageUrl ? new URL(imageUrl, UPSTREAMS[source]).href : "",
+    url,
+  };
+}
+
 function tumblrPosts(payload) {
   const posts = Array.isArray(payload?.response) ? payload.response : [];
   return posts.flatMap(post => {
@@ -131,7 +160,19 @@ export default {
     const params = new URLSearchParams(url.search);
     let upstream;
     let scrape;
-    if (url.pathname === "/danbooru/posts.json") {
+    let lookup;
+    if (url.pathname === "/import/lookup") {
+      const source = params.get("source") || "";
+      const ids = [...new Set((params.get("ids") || "").split(",").filter(Boolean))];
+      if (!["danbooru", "safebooru", "hypnohub", "rule34", "realbooru"].includes(source)) {
+        return response('{"error":"Choose a supported booru source; Tumblr ID lookup is not available"}', 400, origin);
+      }
+      if (!ids.length || ids.length > 20 || ids.some(id =>
+        !/^\d{1,20}$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) < 1)) {
+        return response('{"error":"Provide 1 to 20 valid numeric post IDs"}', 400, origin);
+      }
+      lookup = { source, ids };
+    } else if (url.pathname === "/danbooru/posts.json") {
       const limit = Number(params.get("limit") || 100);
       const page = Number(params.get("page") || 1);
       const tags = params.get("tags") || "";
@@ -218,6 +259,53 @@ export default {
     }
 
     try {
+      if (lookup) {
+        const { source, ids } = lookup;
+        const posts = [];
+        for (let i = 0; i < ids.length; i++) {
+          const id = ids[i];
+          const postUrl = source === "danbooru"
+            ? new URL(`/posts/${id}.json`, UPSTREAMS[source])
+            : new URL("/index.php", POST_PAGES[source]);
+          if (source !== "danbooru") {
+            postUrl.searchParams.set("page", "post");
+            postUrl.searchParams.set("s", "view");
+            postUrl.searchParams.set("id", id);
+          }
+          const upstreamResponse = await fetch(postUrl, {
+            headers: {
+              Accept: source === "danbooru" ? "application/json" : "text/html",
+              "User-Agent": "PhotoFinder/1.0 (GitHub Pages static app)",
+            },
+            signal: AbortSignal.timeout(15000),
+            cf: { cacheEverything: true, cacheTtl: 3600 },
+          });
+          if (upstreamResponse.status === 404) continue;
+          if (!upstreamResponse.ok) {
+            return response(JSON.stringify({ error: `${source} returned HTTP ${upstreamResponse.status} for post ${id}` }), 502, origin);
+          }
+          let post;
+          if (source === "danbooru") {
+            const data = await upstreamResponse.json();
+            const tags = typeof data.tag_string === "string" ? data.tag_string.trim() : "";
+            if (tags) {
+              post = {
+                id: `d${id}`,
+                tags,
+                thumb: data.preview_file_url || data.large_file_url || data.file_url || "",
+                url: `${UPSTREAMS.danbooru}/posts/${id}`,
+              };
+            }
+          } else {
+            post = lookupHtmlPost(source, id, await upstreamResponse.text());
+          }
+          if (post) posts.push(post);
+          if (i < ids.length - 1) await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        const result = response(JSON.stringify(posts), 200, origin);
+        result.headers.set("Cache-Control", "no-store");
+        return result;
+      }
       if (scrape) {
         const headers = {
           Accept: "text/html",
