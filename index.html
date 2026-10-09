@@ -8,11 +8,12 @@
 @media(prefers-color-scheme:dark){:root{--bg:#111827;--fg:#e5e7eb;--card:#1f2937;--mut:#9ca3af;--ac:#4da3ff}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif;
 padding:env(safe-area-inset-top) 10px calc(20px + env(safe-area-inset-bottom))}
-nav{display:flex;gap:8px;padding:10px 0;position:sticky;top:0;background:var(--bg);z-index:2;align-items:center}
+nav{display:flex;flex-wrap:wrap;gap:8px;padding:10px 0;position:sticky;top:0;background:var(--bg);z-index:2;align-items:center}
 button,select,input{font:inherit;color:inherit}
 nav button,.go{border:0;border-radius:8px;min-height:44px;padding:0 16px;background:var(--card);cursor:pointer}
 nav button.on{background:var(--ac);color:#fff}.go{background:var(--ac);color:#fff;width:100%;font-weight:600}
 .go:disabled{opacity:.5}#st{color:var(--mut);margin:8px 2px;min-height:1.3em}
+nav #go{flex:1 1 100%;width:auto}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.chips span{padding:6px 10px;border-radius:99px;background:var(--card);
 font-size:13px;cursor:pointer}.chips span.off{opacity:.35;text-decoration:line-through}
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
@@ -26,9 +27,9 @@ details{background:var(--card);border-radius:8px;padding:8px 12px;margin:10px 0}
 details label{display:block;margin:8px 0}details input,details select,details textarea{width:100%;padding:8px;border-radius:6px;border:1px solid #8886;background:var(--bg)}
 .row{display:flex;gap:8px;margin:8px 0}.row button{flex:1;min-height:40px;border:0;border-radius:8px;background:var(--bg);cursor:pointer}
 </style></head><body>
-<nav><button id="t1" class="on">Discover</button><button id="t2">Liked (0)</button><button id="t3">Dismissed (0)</button></nav>
+<nav><button id="t1" class="on">Discover</button><button id="t2">Liked (0)</button><button id="t3">Dismissed (0)</button><button class="go" id="go">Find pictures</button></nav>
 <main id="v1">
-<button class="go" id="go">Find pictures</button><p id="st"></p>
+<p id="st"></p>
 <details><summary>Search tags</summary><p>Tap tags to turn them off. Dimmed tags stay in this pool but aren't used for dynamic searches. Tap a default exclusion to unlock or relock it; your added exclusions can be removed.</p>
 <div class="chips" id="chips"></div>
 <label>Add included tag<input id="includeInput" placeholder="e.g. pikachu" autocapitalize="off"></label>
@@ -40,8 +41,7 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <label>Topic tag (optional on most sources; Tumblr requires one)<input id="topic" placeholder="pokemon" autocapitalize="off"></label>
 <label>Rating<select id="rating"><option value="g">General (g)</option><option value="q">Questionable (q)</option><option value="s">Sensitive (s)</option><option value="e">Explicit (e)</option></select></label>
 <label>Built-in tags searched per run<select id="ns"><option>8</option><option>12</option><option>20</option></select></label>
-<label>Candidate pool<select id="pool"><option value="100">100</option><option value="200">200</option><option value="400">400</option></select></label>
-<label>Maximum pictures to show<select id="display"><option value="25">25</option><option value="50">50</option><option value="75">75</option></select></label>
+<label>Maximum pictures to show<input id="display" type="number" min="1" max="1000" step="1" inputmode="numeric"></label>
 <label>Minimum score (Tumblr uses notes)<input id="minScore" type="number" min="0" max="1000000" step="1" inputmode="numeric"></label>
 <label>Date on or after<input id="since" type="date"></label>
 <label>Date on or before<input id="until" type="date"></label>
@@ -74,7 +74,7 @@ translation_request no_humans solo solo_focus 1girl 1boy 2girls 2boys simple_bac
 artist_name signature watermark twitter_username character_name artist_logo looking_at_viewer smile open_mouth closed_mouth standing full_body
 sitting holding animal_focus pokemon_focus outdoors day night dated hat shirt pants long_hair short_hair red_eyes blue_eyes yellow_eyes black_eyes
 black_hair colored_sclera teeth claws tail wings short_sleeves gen_1_pokemon food_name`.split(/\s+/));
-let cfg={src:'danbooru',topic:'pokemon',ns:12,rating:'g',pool:200,display:50,minScore:0,since:'',until:'',...LS('cfg')},liked=LS('liked')||[],
+let cfg={src:'danbooru',topic:'pokemon',ns:12,rating:'g',display:50,minScore:0,since:'',until:'',...LS('cfg')},liked=LS('liked')||[],
 customTags=LS('customTags')||[],userExcludedTags=LS('excludedTags')||[],unlockedDefaultTags=new Set(Array.isArray(LS('unlockedDefaultTags'))?LS('unlockedDefaultTags'):[]),excludedTags=[],dismissed=LS('dismissed')||[],
 seen=new Set(LS('seen')||[]),seenHashes=new Set(LS('seenHashes')||[]),off=new Set(LS('off')||[]),cur=LS('cur')||[],
 rule34IdCursors=LS('rule34IdCursors')||{},tumblrCursors=LS('tumblrCursors')||{};
@@ -95,8 +95,7 @@ if(!Array.isArray(dismissed))dismissed=[];
 if(!['danbooru','safebooru','hypnohub','rule34','realbooru','tumblr'].includes(cfg.src))cfg.src='danbooru';
 cfg.topic=String(cfg.topic??'pokemon').trim().replace(/\s+/g,'_').toLowerCase();
 if(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg.topic)||cfg.topic.startsWith('-'))cfg.topic='pokemon';
-if(![100,200,400].includes(+cfg.pool))cfg.pool=200;
-if(![25,50,75].includes(+cfg.display))cfg.display=50;
+if(!Number.isSafeInteger(+cfg.display)||+cfg.display<1||+cfg.display>1000)cfg.display=50;
 const ratingChoices=src=>src=='tumblr'?[['none','Not provided by Tumblr']]:
  ['hypnohub','rule34','realbooru'].includes(src)?[['safe','Safe'],['questionable','Questionable'],['explicit','Explicit']]:
  src=='safebooru'?[['safe','Safe']]:[['g','General (g)'],['q','Questionable (q)'],['s','Sensitive (s)'],['e','Explicit (e)']];
@@ -235,7 +234,7 @@ async function run(){
  $('#go').disabled=true;const pool=new Map(),base=new Map(),poolHashes=new Set(),
   rule34IdBefore=cfg.src=='rule34'?{...rule34IdCursors}:{},rule34IdFound=Object.create(null),
   tumblrBefore=cfg.src=='tumblr'?{...tumblrCursors}:{},tumblrFound=Object.create(null),add=(items,isBase=false)=>{
-  for(const c of items){if(pool.size>=+cfg.pool)break;if(pool.has(c.id)||seen.has(c.id)||(c.hash&&(seenHashes.has(c.hash)||poolHashes.has(c.hash)))||
+  for(const c of items){if(pool.has(c.id)||seen.has(c.id)||(c.hash&&(seenHashes.has(c.hash)||poolHashes.has(c.hash)))||
    isL(c.id)||isD(c.id)||excludedTags.some(t=>c.tags.includes(t)))continue;
    pool.set(c.id,c);if(c.hash)poolHashes.add(c.hash);if(isBase)base.set(c.id,c)}};
  const counts={};liked.forEach(l=>l.tags.split(/\s+/).forEach(t=>{if(t&&!STOP.has(t)&&!excludedTags.includes(t))counts[t]=(counts[t]||0)+1}));
@@ -252,12 +251,12 @@ async function run(){
   if(cfg.src=='realbooru')add(await search('',1,8),true);
   else if(cfg.src=='tumblr')add(await search('',1,20,rule34IdBefore,rule34IdFound,tumblrBefore,tumblrFound),true);
   else{
-   add(await search('',1,Math.min(50,+cfg.pool),rule34IdBefore,rule34IdFound),true);await sl();
-   for(const [i,s] of seeds.entries()){if(pool.size>=+cfg.pool)break;say(`Searching "${s}" (${i+1}/${seeds.length})…`);
-    try{add(await search(s,1+Math.floor(Math.random()*3),Math.min(100,+cfg.pool-pool.size),rule34IdBefore,rule34IdFound))}catch(e){if(!e.status)throw e}await sl()}
-   for(let p=2;pool.size<+cfg.pool&&p<=Math.ceil(+cfg.pool/50)+1;p++){
-    say(`Filling candidate pool (${pool.size}/${cfg.pool})…`);
-    add(await search('',p,Math.min(100,+cfg.pool-pool.size),rule34IdBefore,rule34IdFound),true);await sl()}
+   add(await search('',1,50,rule34IdBefore,rule34IdFound),true);await sl();
+   for(const [i,s] of seeds.entries()){say(`Searching "${s}" (${i+1}/${seeds.length})…`);
+    try{add(await search(s,1+Math.floor(Math.random()*3),100,rule34IdBefore,rule34IdFound))}catch(e){if(!e.status)throw e}await sl()}
+   for(let p=2;!seeds.length&&pool.size<+cfg.display&&p<=Math.ceil(+cfg.display/100)+1;p++){
+    say(`Searching page ${p} (${pool.size}/${cfg.display})…`);
+    add(await search('',p,Math.min(100,+cfg.display-pool.size),rule34IdBefore,rule34IdFound),true);await sl()}
   }
   say('Ranking…');const out=rank(pool,base);
   if(!out.length){say('Nothing new found. Try more tags, or "Forget shown pictures".');return}
@@ -273,7 +272,7 @@ async function run(){
   renderRule34IdPosition();$('#go').disabled=false}}
 $('#go').onclick=run;
 [['t1','v1'],['t2','v2'],['t3','v3']].forEach(([t,v])=>$('#'+t).onclick=()=>{['t1','t2','t3'].forEach(x=>$('#'+x).classList.toggle('on',x==t));
- ['v1','v2','v3'].forEach(x=>$('#'+x).hidden=x!=v);if(v=='v2')showLiked();if(v=='v3')showDismissed()});
+ $('#go').hidden=t!='t1';['v1','v2','v3'].forEach(x=>$('#'+x).hidden=x!=v);if(v=='v2')showLiked();if(v=='v3')showDismissed()});
 function renderSeedTags(){const counts={};liked.forEach(l=>String(l.tags||'').split(/\s+/).forEach(t=>{
  if(t&&!STOP.has(t)&&!excludedTags.includes(t))counts[t]=(counts[t]||0)+1}));
  const tags=[...new Set([...P.seeds,...Object.keys(counts).sort((a,b)=>counts[b]-counts[a]).slice(0,100)])],box=$('#chips');
@@ -292,7 +291,7 @@ $('#addInclude').onclick=()=>addTag('includeInput',customTags,'customTags','cust
 $('#addExclude').onclick=()=>addTag('excludeInput',userExcludedTags,'excludedTags','excludedChips');
 [['includeInput','addInclude'],['excludeInput','addExclude']].forEach(([input,button])=>$('#'+input).onkeydown=e=>{if(e.key=='Enter'){e.preventDefault();$('#'+button).click()}});
 renderTags('customChips',customTags,'customTags');renderTags('excludedChips',userExcludedTags,'excludedTags');
-[['ns','ns'],['topic','topic'],['pool','pool'],['display','display'],['minScore','minScore'],['since','since'],['until','until']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{if(id=='minScore'){const value=Number(e.value);if(!Number.isSafeInteger(value)||value<0||value>1000000){say('Minimum score must be a whole number from 0 to 1,000,000.');e.value=cfg.minScore;return}cfg[k]=value}else cfg[k]=id=='topic'?e.value.trim().replace(/\s+/g,'_').toLowerCase():e.value.trim();if(id=='topic'&&(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg[k])||cfg[k].startsWith('-'))){cfg[k]='pokemon';e.value=cfg[k];say('Enter one valid topic tag, or leave it blank for any topic.')}SV('cfg',cfg)}});
+[['ns','ns'],['topic','topic'],['display','display'],['minScore','minScore'],['since','since'],['until','until']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{if(id=='minScore'||id=='display'){const value=Number(e.value),min=id=='display'?1:0,max=id=='display'?1000:1000000;if(!Number.isSafeInteger(value)||value<min||value>max){say(id=='display'?'Maximum pictures must be a whole number from 1 to 1,000.':'Minimum score must be a whole number from 0 to 1,000,000.');e.value=cfg[k];return}cfg[k]=value}else cfg[k]=id=='topic'?e.value.trim().replace(/\s+/g,'_').toLowerCase():e.value.trim();if(id=='topic'&&(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg[k])||cfg[k].startsWith('-'))){cfg[k]='pokemon';e.value=cfg[k];say('Enter one valid topic tag, or leave it blank for any topic.')}SV('cfg',cfg)}});
 function renderRating(){const e=$('#rating');e.innerHTML='';ratingChoices(cfg.src).forEach(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;e.appendChild(o)});e.value=cfg.rating}
 $('#src').value=cfg.src;renderRating();renderRule34IdPosition();
 $('#src').onchange=()=>{cfg.src=$('#src').value;cfg.rating=ratingChoices(cfg.src)[0][0];renderRating();renderRule34IdPosition();SV('cfg',cfg)};

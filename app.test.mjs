@@ -17,6 +17,9 @@ const jgetSource = script.slice(jgetStart, jgetEnd);
 const urlImportStart = script.indexOf("function importLikedUrls");
 const urlImportEnd = script.indexOf("$('#addLikedUrls')", urlImportStart);
 const urlImportSource = script.slice(urlImportStart, urlImportEnd);
+const runStart = script.indexOf("async function run()");
+const runEnd = script.indexOf("$('#go').onclick", runStart);
+const runSource = script.slice(runStart, runEnd);
 
 test("HypnoHub searches obey the two-clause limit and require every included tag", async () => {
   const requested = [];
@@ -612,4 +615,15 @@ test("saved photo URLs import as liked links and direct image URLs get previews"
     0,
   );
   assert.throws(() => context.addLikedUrls("javascript:alert(1)", "pokemon"));
+});
+
+test("discovery controls allow adjustable output and search every selected tag", () => {
+  assert.match(html, /<label>Maximum pictures to show<input id="display" type="number" min="1" max="1000" step="1"/);
+  assert.match(script, /id=='display'\?1000/);
+  assert.match(html, /<nav>[\s\S]*<button class="go" id="go">Find pictures<\/button><\/nav>/);
+  assert.match(script, /\$\('#go'\)\.hidden=t!='t1'/);
+  assert.doesNotMatch(runSource, /cfg\.pool/);
+  assert.match(runSource, /for\(const \[i,s\] of seeds\.entries\(\)\)/);
+  assert.match(runSource, /search\(s,1\+Math\.floor\(Math\.random\(\)\*3\),100/);
+  assert.match(runSource, /!seeds\.length&&pool\.size<\+cfg\.display/);
 });
