@@ -46,6 +46,92 @@ test("proxies validated Danbooru API requests to its fixed origin", async () => 
   }
 });
 
+test("looks up Danbooru post IDs and returns tags and preview metadata", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async url => {
+    const upstream = new URL(url);
+    requests.push(upstream);
+    const id = Number(upstream.pathname.match(/\d+/)[0]);
+    return new Response(JSON.stringify({
+      id,
+      tag_string: "pokemon pikachu solo",
+      preview_file_url: `https://img.test/${id}.jpg`,
+    }), { headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await worker.fetch(request(
+      "/import/lookup?source=danbooru&ids=123,456",
+      { headers: { Origin: allowedOrigin } },
+    ), {});
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get("Access-Control-Allow-Origin"), allowedOrigin);
+    assert.deepEqual(await result.json(), [
+      {
+        id: "d123",
+        tags: "pokemon pikachu solo",
+        thumb: "https://img.test/123.jpg",
+        url: "https://danbooru.donmai.us/posts/123",
+      },
+      {
+        id: "d456",
+        tags: "pokemon pikachu solo",
+        thumb: "https://img.test/456.jpg",
+        url: "https://danbooru.donmai.us/posts/456",
+      },
+    ]);
+    assert.deepEqual(requests.map(upstream => upstream.pathname), ["/posts/123.json", "/posts/456.json"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("looks up Rule34 post IDs through its post page and extracts tags", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstream;
+  globalThis.fetch = async url => {
+    upstream = new URL(url);
+    return new Response(`<img id="image" src="/images/123.jpg">
+      <a class="tag-type-general">pokemon</a><a class="tag-type-character">pikachu</a>`);
+  };
+  try {
+    const result = await worker.fetch(request(
+      "/import/lookup?source=rule34&ids=123",
+      { headers: { Origin: allowedOrigin } },
+    ), {});
+    assert.equal(result.status, 200);
+    assert.equal(upstream.origin, "https://rule34.xxx");
+    assert.equal(upstream.searchParams.get("id"), "123");
+    assert.deepEqual(await result.json(), [{
+      id: "r123",
+      tags: "pokemon pikachu",
+      thumb: "https://rule34.xxx/images/123.jpg",
+      url: "https://rule34.xxx/index.php?page=post&s=view&id=123",
+    }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("validates ID lookup limits and rejects unsupported Tumblr lookups", async () => {
+  const invalidIds = await worker.fetch(request(
+    "/import/lookup?source=danbooru&ids=0,not-an-id",
+    { headers: { Origin: allowedOrigin } },
+  ), {});
+  assert.equal(invalidIds.status, 400);
+  const tooMany = await worker.fetch(request(
+    `/import/lookup?source=danbooru&ids=${Array.from({ length: 21 }, (_, i) => i + 1).join(",")}`,
+    { headers: { Origin: allowedOrigin } },
+  ), {});
+  assert.equal(tooMany.status, 400);
+  const tumblr = await worker.fetch(request(
+    "/import/lookup?source=tumblr&ids=123",
+    { headers: { Origin: allowedOrigin } },
+  ), {});
+  assert.equal(tumblr.status, 400);
+  assert.match((await tumblr.json()).error, /Tumblr ID lookup is not available/);
+});
+
 test("proxies a HypnoHub request, preserving CORS and enforcing its two-clause cap", async () => {
   const originalFetch = globalThis.fetch;
   let upstream;

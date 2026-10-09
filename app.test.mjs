@@ -14,9 +14,9 @@ const rankSource = script.slice(rankStart, rankEnd);
 const jgetStart = script.indexOf("async function jget");
 const jgetEnd = script.indexOf("const hasRequiredTags", jgetStart);
 const jgetSource = script.slice(jgetStart, jgetEnd);
-const urlImportStart = script.indexOf("function importLikedUrls");
-const urlImportEnd = script.indexOf("$('#addLikedUrls')", urlImportStart);
-const urlImportSource = script.slice(urlImportStart, urlImportEnd);
+const idImportStart = script.indexOf("async function lookupLikedIds");
+const idImportEnd = script.indexOf("$('#addLikedIds')", idImportStart);
+const idImportSource = script.slice(idImportStart, idImportEnd);
 const runStart = script.indexOf("async function run()");
 const runEnd = script.indexOf("$('#go').onclick", runStart);
 const runSource = script.slice(runStart, runEnd);
@@ -586,9 +586,20 @@ test("toggled-off tags remain visible but are skipped as dynamic search seeds", 
   );
 });
 
-test("saved photo URLs import as liked links and direct image URLs get previews", () => {
+test("post IDs are looked up from the selected source and imported with their tags", async () => {
+  let requested;
   const context = {
-    URL,
+    cfg: { src: "danbooru" },
+    WORKER: "https://worker.test",
+    fetch: async url => {
+      requested = new URL(url);
+      return {
+        ok: true,
+        json: async () => [
+          { id: "d123", tags: "pokemon pikachu solo", thumb: "https://img.test/123.jpg", url: "https://danbooru.donmai.us/posts/123" },
+        ],
+      };
+    },
     liked: [],
     SV: () => {},
     cnt: () => {},
@@ -596,25 +607,20 @@ test("saved photo URLs import as liked links and direct image URLs get previews"
     renderSeedTags: () => {},
   };
   vm.createContext(context);
-  vm.runInContext(`${urlImportSource}; globalThis.addLikedUrls = importLikedUrls;`, context);
+  vm.runInContext(`${idImportSource}; globalThis.addLikedIds = lookupLikedIds;`, context);
 
-  assert.equal(
-    context.addLikedUrls(
-      "https://images.example/art.jpg?size=large\nhttps://danbooru.donmai.us/posts/123",
-      "Pokemon Pikachu solo",
-    ),
-    2,
+  assert.deepEqual(
+    { ...await context.addLikedIds("123, 456\n123") },
+    { added: 1, notFound: 1 },
   );
-  assert.equal(context.liked.length, 2);
-  assert.equal(context.liked[0].thumb, "https://images.example/art.jpg?size=large");
+  assert.equal(requested.pathname, "/import/lookup");
+  assert.equal(requested.searchParams.get("source"), "danbooru");
+  assert.equal(requested.searchParams.get("ids"), "123,456");
   assert.equal(context.liked[0].tags, "pokemon pikachu solo");
-  assert.equal(context.liked[1].thumb, "");
-  assert.equal(context.liked[1].url, "https://danbooru.donmai.us/posts/123");
-  assert.equal(
-    context.addLikedUrls("https://danbooru.donmai.us/posts/123", "pokemon solo"),
-    0,
-  );
-  assert.throws(() => context.addLikedUrls("javascript:alert(1)", "pokemon"));
+  assert.equal(context.liked[0].thumb, "https://img.test/123.jpg");
+  assert.equal((await context.addLikedIds("123")).added, 0);
+  await assert.rejects(context.addLikedIds("javascript:alert(1)"));
+  await assert.rejects(context.addLikedIds("123", "tumblr"));
 });
 
 test("discovery controls allow adjustable output and search every selected seed", async () => {

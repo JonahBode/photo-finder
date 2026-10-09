@@ -111,7 +111,7 @@ function lookupHtmlPost(source, id, html) {
   return {
     id: `${{ danbooru: "d", safebooru: "s", hypnohub: "h", rule34: "r", realbooru: "b" }[source]}${id}`,
     tags: tags.join(" "),
-    thumb: imageUrl ? new URL(imageUrl, UPSTREAMS[source]).href : "",
+    thumb: imageUrl ? new URL(imageUrl, POST_PAGES[source]).href : "",
     url,
   };
 }
