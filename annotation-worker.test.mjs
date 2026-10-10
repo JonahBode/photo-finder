@@ -119,3 +119,18 @@ test("reports provider-level annotation errors instead of returning fabricated l
   assert.equal(response.status, 502);
   assert.match((await response.json()).error, /could not process this image/);
 });
+
+test("reports Tumblr API errors instead of claiming there are no related posts", async () => {
+  const fetcher = async url => {
+    if (new URL(url).hostname === "vision.googleapis.com") {
+      return Response.json({ responses: [{ labelAnnotations: [{ description: "Portrait" }] }] });
+    }
+    return Response.json({ meta: { status: 401 }, errors: ["Unauthorized"] });
+  };
+  const response = await handleRequest(request({ mimeType: "image/jpeg", image: jpeg }), env, fetcher);
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(result.tumblr.status, "error");
+  assert.equal(result.tumblr.posts.length, 0);
+  assert.match(result.tumblr.message, /Some Tumblr keyword searches/);
+});

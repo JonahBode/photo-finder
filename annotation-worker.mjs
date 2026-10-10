@@ -83,7 +83,9 @@ async function searchTumblr(keywords, apiKey, fetcher) {
       const response = await fetcher(url, { headers: { Accept: "application/json" } });
       if (!response.ok) { failures++; continue; }
       const payload = await response.json();
-      const posts = Array.isArray(payload.response) ? payload.response : [];
+      if (payload.meta?.status && payload.meta.status >= 400) { failures++; continue; }
+      if (!Array.isArray(payload.response)) { failures++; continue; }
+      const posts = payload.response;
       for (const post of posts) {
         const postUrl = safeHttpsUrl(post.post_url);
         if (!postUrl || !post.blog_name) continue;
@@ -122,8 +124,11 @@ async function annotateWithVision(image, apiKey, fetcher) {
   });
   if (!response.ok) throw new Error(`Image annotation provider returned HTTP ${response.status}.`);
   const payload = await response.json();
-  if (payload.responses?.[0]?.error) throw new Error("Image annotation provider could not process this image.");
-  const labels = payload.responses?.[0]?.labelAnnotations;
+  const result = payload.responses?.[0];
+  if (!result) throw new Error("Image annotation provider returned an invalid response.");
+  if (result.error) throw new Error("Image annotation provider could not process this image.");
+  const labels = result.labelAnnotations;
+  if (labels != null && !Array.isArray(labels)) throw new Error("Image annotation provider returned an invalid response.");
   const keywords = Array.isArray(labels) ? labels
     .map(label => typeof label.description === "string" ? label.description.trim() : "")
     .filter(Boolean).slice(0, TUMBLR_TAGS_PER_IMAGE) : [];
