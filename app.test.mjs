@@ -624,7 +624,9 @@ test("post IDs are looked up from the selected source and imported with their ta
 });
 
 test("discovery controls allow adjustable output and search every selected seed", async () => {
+  assert.match(html, /<label>Built-in tags searched per run<input id="ns" type="number" min="1" max="40" step="1"/);
   assert.match(html, /<label>Maximum pictures to show<input id="display" type="number" min="1" max="1000" step="1"/);
+  assert.match(script, /id=='ns'\?40/);
   assert.match(script, /id=='display'\?1000/);
   assert.match(html, /<nav>[\s\S]*<button class="go" id="go">Find pictures<\/button><\/nav>/);
   assert.match(script, /\$\('#go'\)\.hidden=t!='t1'/);
@@ -632,8 +634,8 @@ test("discovery controls allow adjustable output and search every selected seed"
   const calls = [];
   const context = {
     $: () => ({ disabled: false }),
-    cfg: { src: "danbooru", topic: "pokemon", ns: 20, display: 50, minScore: 0, since: "", until: "" },
-    P: { seeds: Array.from({ length: 20 }, (_, i) => `seed_${i}`) },
+    cfg: { src: "danbooru", topic: "pokemon", ns: 40, display: 50, minScore: 0, since: "", until: "" },
+    P: { seeds: Array.from({ length: 40 }, (_, i) => `seed_${i}`) },
     liked: [],
     customTags: [],
     excludedTags: [],

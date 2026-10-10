@@ -40,8 +40,8 @@ details label{display:block;margin:8px 0}details input,details select,details te
 <label>Source<select id="src"><option value="danbooru">Danbooru</option><option value="safebooru">Safebooru</option><option value="hypnohub">HypnoHub (Gelbooru DAPI)</option><option value="rule34">Rule34.xxx (Gelbooru DAPI)</option><option value="realbooru">Realbooru (limited HTML scrape)</option><option value="tumblr">Tumblr (tagged posts)</option></select></label>
 <label>Topic tag (optional on most sources; Tumblr requires one)<input id="topic" placeholder="pokemon" autocapitalize="off"></label>
 <label>Rating<select id="rating"><option value="g">General (g)</option><option value="q">Questionable (q)</option><option value="s">Sensitive (s)</option><option value="e">Explicit (e)</option></select></label>
-<label>Built-in tags searched per run<select id="ns"><option>8</option><option>12</option><option>20</option></select></label>
-<small>Every selected seed gets its own request (up to 100 results); larger tag sets can take longer.</small>
+<label>Built-in tags searched per run<input id="ns" type="number" min="1" max="40" step="1" inputmode="numeric"></label>
+<small>Choose 1–40 built-in tags. Each selected seed gets its own request (up to 100 results); included tags are applied as required filters.</small>
 <label>Maximum pictures to show<input id="display" type="number" min="1" max="1000" step="1" inputmode="numeric"></label>
 <label>Minimum score (Tumblr uses notes)<input id="minScore" type="number" min="0" max="1000000" step="1" inputmode="numeric"></label>
 <label>Date on or after<input id="since" type="date"></label>
@@ -95,6 +95,7 @@ if(!Array.isArray(dismissed))dismissed=[];
 if(!['danbooru','safebooru','hypnohub','rule34','realbooru','tumblr'].includes(cfg.src))cfg.src='danbooru';
 cfg.topic=String(cfg.topic??'pokemon').trim().replace(/\s+/g,'_').toLowerCase();
 if(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg.topic)||cfg.topic.startsWith('-'))cfg.topic='pokemon';
+if(!Number.isSafeInteger(+cfg.ns)||+cfg.ns<1||+cfg.ns>40)cfg.ns=12;
 if(!Number.isSafeInteger(+cfg.display)||+cfg.display<1||+cfg.display>1000)cfg.display=50;
 const ratingChoices=src=>src=='tumblr'?[['none','Not provided by Tumblr']]:
  ['hypnohub','rule34','realbooru'].includes(src)?[['safe','Safe'],['questionable','Questionable'],['explicit','Explicit']]:
@@ -263,7 +264,7 @@ async function run(){
   cur.forEach(c=>{seen.add(c.id);if(c.hash)seenHashes.add(c.hash)});
   out.forEach(c=>{seen.add(c.id);if(c.hash)seenHashes.add(c.hash)});
   cur=out;SV('cur',cur);SV('seen',[...seen].slice(-6000));SV('seenHashes',[...seenHashes].slice(-6000));showCur();
-  say(`${out.length} new picks from ${pool.size} candidates. Heart the ones you like — they sharpen the next run.`);scrollTo(0,0)
+  say(`${out.length} new picks from ${pool.size} candidates searched across ${seeds.length||1} tag${seeds.length==1?'':'s'}. Heart the ones you like — they sharpen the next run.`);scrollTo(0,0)
  }catch(e){say(e.status?`The site answered with an error (${e.status})${e.detail?`: ${e.detail}`:''}. Try again in a minute.`:
   e.name!='TypeError'&&e.message?e.message:
   'The browser could not reach the source or its proxy (blocked by CORS, or offline).')}
@@ -291,7 +292,7 @@ $('#addInclude').onclick=()=>addTag('includeInput',customTags,'customTags','cust
 $('#addExclude').onclick=()=>addTag('excludeInput',userExcludedTags,'excludedTags','excludedChips');
 [['includeInput','addInclude'],['excludeInput','addExclude']].forEach(([input,button])=>$('#'+input).onkeydown=e=>{if(e.key=='Enter'){e.preventDefault();$('#'+button).click()}});
 renderTags('customChips',customTags,'customTags');renderTags('excludedChips',userExcludedTags,'excludedTags');
-[['ns','ns'],['topic','topic'],['display','display'],['minScore','minScore'],['since','since'],['until','until']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{if(id=='minScore'||id=='display'){const value=Number(e.value),min=id=='display'?1:0,max=id=='display'?1000:1000000;if(!Number.isSafeInteger(value)||value<min||value>max){say(id=='display'?'Maximum pictures must be a whole number from 1 to 1,000.':'Minimum score must be a whole number from 0 to 1,000,000.');e.value=cfg[k];return}cfg[k]=value}else cfg[k]=id=='topic'?e.value.trim().replace(/\s+/g,'_').toLowerCase():e.value.trim();if(id=='topic'&&(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg[k])||cfg[k].startsWith('-'))){cfg[k]='pokemon';e.value=cfg[k];say('Enter one valid topic tag, or leave it blank for any topic.')}SV('cfg',cfg)}});
+[['ns','ns'],['topic','topic'],['display','display'],['minScore','minScore'],['since','since'],['until','until']].forEach(([id,k])=>{const e=$('#'+id);e.value=cfg[k];e.onchange=()=>{if(['ns','minScore','display'].includes(id)){const value=Number(e.value),min=id=='display'?1:0,max=id=='display'?1000:id=='ns'?40:1000000;if(!Number.isSafeInteger(value)||value<min||value>max){say(id=='display'?'Maximum pictures must be a whole number from 1 to 1,000.':id=='ns'?'Built-in tags per run must be a whole number from 1 to 40.':'Minimum score must be a whole number from 0 to 1,000,000.');e.value=cfg[k];return}cfg[k]=value}else cfg[k]=id=='topic'?e.value.trim().replace(/\s+/g,'_').toLowerCase():e.value.trim();if(id=='topic'&&(!/^[a-z0-9_()!:+.@-]{0,80}$/.test(cfg[k])||cfg[k].startsWith('-'))){cfg[k]='pokemon';e.value=cfg[k];say('Enter one valid topic tag, or leave it blank for any topic.')}SV('cfg',cfg)}});
 function renderRating(){const e=$('#rating');e.innerHTML='';ratingChoices(cfg.src).forEach(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;e.appendChild(o)});e.value=cfg.rating}
 $('#src').value=cfg.src;renderRating();renderRule34IdPosition();
 $('#src').onchange=()=>{cfg.src=$('#src').value;cfg.rating=ratingChoices(cfg.src)[0][0];renderRating();renderRule34IdPosition();SV('cfg',cfg)};

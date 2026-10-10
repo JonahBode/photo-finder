@@ -5,6 +5,8 @@ Find similar photos
 
 In **Settings → Topic tag**, enter a booru tag such as `league_of_legends` to search a different series. The default is `pokemon`; leave the field blank to search without a required topic tag. Search tags and rating syntax vary by image source.
 
+In **Settings → Built-in tags searched per run**, choose any whole number from 1 to 40. Every enabled selected seed gets its own search request; included tags remain required filters. A larger selection takes longer because requests are paced.
+
 ## API proxy
 
 Danbooru, HypnoHub, Rule34, and Realbooru requests use the Cloudflare Worker configured in the app. Safebooru requests remain direct. The [`wrangler.toml`](wrangler.toml) config declares [`worker.js`](worker.js) as the Worker entrypoint and deploys it as `photo-finder` to `workers.dev`; its CORS allowlist is restricted to `https://jonahbode.github.io`.
