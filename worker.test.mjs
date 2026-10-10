@@ -86,13 +86,17 @@ test("looks up Danbooru post IDs and returns tags and preview metadata", async (
   }
 });
 
-test("looks up Rule34 post IDs through its post page and extracts tags", async () => {
+test("looks up Rule34 post IDs through JSON DAPI instead of the blocked post page", async () => {
   const originalFetch = globalThis.fetch;
   let upstream;
   globalThis.fetch = async url => {
     upstream = new URL(url);
-    return new Response(`<img id="image" src="/images/123.jpg">
-      <a class="tag-type-general">pokemon</a><a class="tag-type-character">pikachu</a>`);
+    return new Response(JSON.stringify([{
+      id: 123,
+      tags: "pokemon pikachu",
+      preview_url: "https://img.test/123-preview.jpg",
+      file_url: "https://img.test/123.jpg",
+    }]), { headers: { "Content-Type": "application/json" } });
   };
   try {
     const result = await worker.fetch(request(
@@ -100,12 +104,15 @@ test("looks up Rule34 post IDs through its post page and extracts tags", async (
       { headers: { Origin: allowedOrigin } },
     ), {});
     assert.equal(result.status, 200);
-    assert.equal(upstream.origin, "https://rule34.xxx");
-    assert.equal(upstream.searchParams.get("id"), "123");
+    assert.equal(upstream.origin, "https://api.rule34.xxx");
+    assert.equal(upstream.searchParams.get("page"), "dapi");
+    assert.equal(upstream.searchParams.get("s"), "post");
+    assert.equal(upstream.searchParams.get("q"), "index");
+    assert.equal(upstream.searchParams.get("tags"), "id:123");
     assert.deepEqual(await result.json(), [{
       id: "r123",
       tags: "pokemon pikachu",
-      thumb: "https://rule34.xxx/images/123.jpg",
+      thumb: "https://img.test/123-preview.jpg",
       url: "https://rule34.xxx/index.php?page=post&s=view&id=123",
     }]);
   } finally {

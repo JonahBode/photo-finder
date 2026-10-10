@@ -264,17 +264,30 @@ export default {
         const posts = [];
         for (let i = 0; i < ids.length; i++) {
           const id = ids[i];
+          const rule34ApiLookup = source === "rule34";
           const postUrl = source === "danbooru"
             ? new URL(`/posts/${id}.json`, UPSTREAMS[source])
-            : new URL("/index.php", POST_PAGES[source]);
-          if (source !== "danbooru") {
+            : new URL("/index.php", rule34ApiLookup ? UPSTREAMS.rule34 : POST_PAGES[source]);
+          if (rule34ApiLookup) {
+            postUrl.searchParams.set("page", "dapi");
+            postUrl.searchParams.set("s", "post");
+            postUrl.searchParams.set("q", "index");
+            postUrl.searchParams.set("json", "1");
+            postUrl.searchParams.set("limit", "1");
+            postUrl.searchParams.set("pid", "0");
+            postUrl.searchParams.set("tags", `id:${id}`);
+            if (env?.RULE34_USER_ID && env.RULE34_API_KEY) {
+              postUrl.searchParams.set("user_id", env.RULE34_USER_ID);
+              postUrl.searchParams.set("api_key", env.RULE34_API_KEY);
+            }
+          } else if (source !== "danbooru") {
             postUrl.searchParams.set("page", "post");
             postUrl.searchParams.set("s", "view");
             postUrl.searchParams.set("id", id);
           }
           const upstreamResponse = await fetch(postUrl, {
             headers: {
-              Accept: source === "danbooru" ? "application/json" : "text/html",
+              Accept: source === "danbooru" || rule34ApiLookup ? "application/json" : "text/html",
               "User-Agent": "PhotoFinder/1.0 (GitHub Pages static app)",
             },
             signal: AbortSignal.timeout(15000),
@@ -285,15 +298,22 @@ export default {
             return response(JSON.stringify({ error: `${source} returned HTTP ${upstreamResponse.status} for post ${id}` }), 502, origin);
           }
           let post;
-          if (source === "danbooru") {
-            const data = await upstreamResponse.json();
+          if (source === "danbooru" || rule34ApiLookup) {
+            const payload = await upstreamResponse.json();
+            const data = rule34ApiLookup
+              ? Array.isArray(payload) ? payload.find(post => String(post?.id) === id) : null
+              : payload;
+            if (!data) continue;
             const tags = typeof data.tag_string === "string" ? data.tag_string.trim() : "";
-            if (tags) {
+            const normalizedTags = tags || (typeof data.tags === "string" ? data.tags.trim() : "");
+            if (normalizedTags) {
               post = {
-                id: `d${id}`,
-                tags,
-                thumb: data.preview_file_url || data.large_file_url || data.file_url || "",
-                url: `${UPSTREAMS.danbooru}/posts/${id}`,
+                id: `${rule34ApiLookup ? "r" : "d"}${id}`,
+                tags: normalizedTags,
+                thumb: data.preview_file_url || data.preview_url || data.sample_url || data.large_file_url || data.file_url || "",
+                url: rule34ApiLookup
+                  ? `${POST_PAGES.rule34}/index.php?page=post&s=view&id=${id}`
+                  : `${UPSTREAMS.danbooru}/posts/${id}`,
               };
             }
           } else {

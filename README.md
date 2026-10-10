@@ -17,7 +17,7 @@ For Rule34, the app remembers the lowest post ID returned for each exact search 
 
 ## Import liked posts by ID
 
-In **Liked**, enter one or more numeric post IDs and choose the matching source in **Settings → Source**. The Worker fetches each post's tags and preview metadata from Danbooru's JSON endpoint or the post page for Safebooru, HypnoHub, Rule34, and Realbooru. Up to 20 IDs can be looked up at once. Tumblr ID lookup is not available because its post lookup requires a blog identifier.
+In **Liked**, enter one or more numeric post IDs and choose the matching source in **Settings → Source**. The Worker fetches each post's tags and preview metadata from Danbooru's JSON endpoint, Rule34's JSON DAPI, or the post page for Safebooru, HypnoHub, and Realbooru. Up to 20 IDs can be looked up at once. Tumblr ID lookup is not available because its post lookup requires a blog identifier.
 
 ## Tumblr source
 
